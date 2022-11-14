@@ -1,9 +1,9 @@
 use tui::{
-    layout::Alignment,
+    layout::{Alignment, Constraint},
     style::{Color, Modifier, Style},
     symbols,
     text::{Span, Spans},
-    widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph, Tabs},
+    widgets::{Block, BorderType, Borders, ListItem, Paragraph, Row, Table, TableState, Tabs},
 };
 
 use crate::{
@@ -48,7 +48,7 @@ pub fn render_key_tabs() -> Tabs<'static> {
                 Span::styled(
                     left,
                     Style::default()
-                        .fg(Color::Red)
+                        .fg(Color::LightRed)
                         .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
                 ),
                 Span::styled(right, Style::default().fg(Color::White)),
@@ -85,10 +85,10 @@ pub fn render_home<'a>() -> Paragraph<'a> {
 }
 
 pub fn render_projects<'a>(
-    pet_list_state: &ListState,
+    project_table_state: &TableState,
     project_list: Vec<Project>,
-    task_list: Vec<Task>,
-) -> (List<'a>, List<'a>) {
+    task_list: &mut Vec<Task>,
+) -> (Table<'a>, Table<'a>) {
     let projects_block = Block::default()
         .borders(Borders::ALL)
         .style(Style::default().fg(Color::White))
@@ -98,52 +98,81 @@ pub fn render_projects<'a>(
     let task_block = Block::default()
         .borders(Borders::ALL)
         .style(Style::default().fg(Color::White))
-        .title("Tasks")
         .border_type(BorderType::Plain);
+
+    pub fn get_task_from_project_id(project_id: String, task_list: &mut Vec<Task>) -> String {
+        let mut counter = 0;
+        (0..task_list.len()).for_each(|i| {
+            if project_id == task_list[i].project_id {
+                counter += 1;
+            }
+        });
+        counter.to_string()
+    }
 
     let project_items: Vec<_> = project_list
         .iter()
         .map(|project| {
-            ListItem::new(Spans::from(vec![Span::styled(
+            Row::new(vec![
                 project.name.clone(),
-                Style::default(),
-            )]))
+                get_task_from_project_id(project.id.clone(), &mut task_list.clone()),
+            ])
         })
         .collect();
 
     let selected_project = project_list
         .get(
-            pet_list_state
+            project_table_state
                 .selected()
-                .expect("there is always a selected pet"),
+                .expect("there is always a selected project"),
         )
         .expect("exists")
         .clone();
 
-    let task_items: Vec<_> = task_list
+    let task_rows: Vec<_> = task_list
         .iter()
         .filter(|task| task.project_id == selected_project.id)
         .map(|task| {
-            ListItem::new(Spans::from(vec![Span::styled(
-                task.content.clone(),
-                Style::default(),
-            )]))
+            Row::new(vec![
+                task.priority.to_string(),
+                task.content.to_string(),
+                task.description.to_string(),
+            ])
         })
         .collect();
 
-    let project_list = List::new(project_items)
+    let project_list = Table::new(project_items)
         .block(projects_block)
         .highlight_style(
             Style::default()
-                .fg(Color::LightRed)
+                .fg(Color::Black)
+                .bg(Color::LightRed)
                 .add_modifier(Modifier::BOLD),
-        );
+        )
+        .column_spacing(1)
+        .widths(&[Constraint::Length(35), Constraint::Length(5)]);
 
-    let task_list = List::new(task_items).block(task_block).highlight_style(
-        Style::default()
-            .fg(Color::LightRed)
-            .add_modifier(Modifier::BOLD),
-    );
+    let task_list = Table::new(task_rows)
+        .block(task_block)
+        .header(
+            Row::new(vec!["Priority", "Name", "Description"]).style(
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::LightRed),
+            ),
+        )
+        .highlight_style(
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::LightRed)
+                .add_modifier(Modifier::BOLD),
+        )
+        .column_spacing(1)
+        .widths(&[
+            Constraint::Length(11),
+            Constraint::Length(11),
+            Constraint::Length(40),
+        ]);
 
     (project_list, task_list)
 }

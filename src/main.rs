@@ -5,11 +5,12 @@ use crossterm::{
 };
 #[allow(unused_imports)]
 use std::{collections::HashMap, thread};
-use std::{io, sync::mpsc};
+use std::{io, sync::mpsc, vec};
 use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
+use tui::widgets::TableState;
 #[allow(unused_imports)]
 use tui::{
     backend::CrosstermBackend,
@@ -29,7 +30,6 @@ pub mod config;
 pub mod ui;
 #[allow(unused_imports)]
 use crate::api::{delete_project, get_projects, post_task, Project};
-use crate::config::Config;
 
 #[derive(Copy, Clone, Debug)]
 enum Event<I> {
@@ -42,6 +42,8 @@ pub enum MenuItem {
     Home,
     Projects,
     Tasks,
+    AddProject,
+    AddTask,
 }
 
 impl From<MenuItem> for usize {
@@ -50,21 +52,20 @@ impl From<MenuItem> for usize {
             MenuItem::Home => 0,
             MenuItem::Projects => 1,
             MenuItem::Tasks => 2,
+            MenuItem::AddProject => 3,
+            MenuItem::AddTask => 4,
         }
     }
 }
 
-#[allow(unused_must_use)]
+#[allow(unused_must_use, unused_variables)]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let token = Arc::new(Mutex::new(Config::get_token()));
-    let projects = Arc::new(Mutex::new(
-        get_projects(&token.lock().unwrap().token).await.unwrap(),
-    ));
-    let mut tasks = get_tasks(&token.lock().unwrap().token).await.unwrap();
     enable_raw_mode().expect("can runin raw mode");
     let (tx, rx) = mpsc::channel();
     let tick_rate = Duration::from_millis(200);
+    let project_id_tasks: HashMap<String, Vec<String>> = HashMap::new();
+
     thread::spawn(move || {
         let mut last_tick = Instant::now();
         loop {
@@ -92,10 +93,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     terminal.clear()?;
 
     let mut active_menu_item = MenuItem::Home;
-    let mut project_list_state = ListState::default();
+    let mut project_list_state = TableState::default();
     project_list_state.select(Some(0));
-    let mut task_list_state = ListState::default();
+    let mut task_list_state = TableState::default();
     task_list_state.select(Some(0));
+
+    let projects = Arc::new(Mutex::new(vec![Project::name("Loading...")]));
+    let mut tasks = Arc::new(Mutex::new(vec![Task::new(
+        "Loading...".to_string(),
+        "".to_string(),
+    )]));
+    let projects2 = Arc::clone(&projects);
+    let tasks2 = Arc::clone(&tasks);
+    tokio::spawn(async move {
+        *projects2.lock().unwrap() = get_projects().await.unwrap();
+    });
+    tokio::spawn(async move {
+        *tasks2.lock().unwrap() = get_tasks().await.unwrap();
+        tasks2
+            .lock()
+            .unwrap()
+            .sort_by(|a, b| a.project_id.cmp(&b.project_id));
+    });
 
     loop {
         terminal.draw(|rect| {
@@ -129,7 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let (left, right) = ui::render_projects(
                         &project_list_state,
                         projects.lock().unwrap().clone(),
-                        tasks.clone(),
+                        &mut tasks.lock().unwrap().clone(),
                     );
                     rect.render_stateful_widget(left, project_chunks[0], &mut project_list_state);
                     rect.render_widget(right, project_chunks[1]);
@@ -144,11 +163,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let (left, right) = ui::render_projects(
                         &project_list_state,
                         projects.lock().unwrap().clone(),
-                        tasks.clone(),
+                        &mut tasks.lock().unwrap().clone(),
                     );
-                    rect.render_widget(left, project_chunks[0]);
+                    rect.render_stateful_widget(left, project_chunks[0], &mut project_list_state);
                     rect.render_stateful_widget(right, project_chunks[1], &mut task_list_state);
                 }
+                MenuItem::AddTask => {}
+                MenuItem::AddProject => {}
             }
         })?;
 
@@ -161,76 +182,109 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 KeyCode::Char('h') => match active_menu_item {
                     MenuItem::Home => active_menu_item = MenuItem::Projects,
-                    MenuItem::Projects => active_menu_item = MenuItem::Home,
+                    MenuItem::Projects => {
+                        active_menu_item = MenuItem::Home;
+                        project_list_state.select(Some(0));
+                    }
                     MenuItem::Tasks => {
                         active_menu_item = MenuItem::Projects;
                     }
+                    _ => {}
                 },
                 KeyCode::Char('l') => match active_menu_item {
                     MenuItem::Home => active_menu_item = MenuItem::Projects,
                     MenuItem::Projects => {
+                        task_list_state.select(Some(0));
                         let project_id =
                             &projects.lock().unwrap()[project_list_state.selected().unwrap()].id;
+                        let tasks2 = Arc::clone(&tasks);
+                        let tasks = tasks2.lock().unwrap();
                         let tasks_from_project: Vec<_> = tasks
                             .iter()
                             .filter(|x| x.project_id == project_id.clone())
                             .collect();
+
                         if tasks_from_project.len() != 0 {
                             active_menu_item = MenuItem::Tasks;
-                            task_list_state.select(Some(0));
                         }
                     }
                     MenuItem::Tasks => {
                         active_menu_item = MenuItem::Projects;
                     }
+                    _ => {}
                 },
                 KeyCode::Char('p') => match active_menu_item {
                     MenuItem::Projects => {
-                        let token3 = token.lock().unwrap().token.clone();
                         let projects2 = Arc::clone(&projects);
                         projects2.lock().unwrap().push(Project::name("PogU"));
-                        let token2 = Arc::clone(&token);
-                        let token2 = &token2.lock().unwrap().token;
-                        post_projects(&token3, "PogU").await;
                         let projects2 = Arc::clone(&projects);
-                        *projects2.lock().unwrap() = get_projects(&token2).await.unwrap();
+                        tokio::spawn(async move {
+                            post_projects("PogU".to_string()).await;
+                            *projects2.lock().unwrap() = get_projects().await.unwrap();
+                        });
                     }
                     _ => {}
                 },
                 KeyCode::Char('a') => match active_menu_item {
-                    MenuItem::Projects => {
-                        let mut map: HashMap<&str, &str> = HashMap::new();
+                    MenuItem::Projects | MenuItem::Tasks => {
+                        let mut_map: Arc<Mutex<HashMap<String, String>>> =
+                            Arc::new(Mutex::new(HashMap::new()));
+                        let map = Arc::clone(&mut_map);
                         let projects2 = Arc::clone(&projects);
                         let current_selected_project =
                             &projects2.lock().unwrap()[project_list_state.selected().unwrap()].id;
-                        tasks.push(Task::new(
-                            String::from("funny lol"),
+                        map.lock().unwrap().insert(
+                            "project_id".to_string(),
+                            current_selected_project.to_string(),
+                        );
+                        map.lock()
+                            .unwrap()
+                            .insert("content".to_string(), "TestTask".to_string());
+                        tasks.lock().unwrap().push(Task::new(
+                            "TestTask".to_string(),
                             current_selected_project.to_owned().clone(),
                         ));
-                        map.insert("project_id", &current_selected_project);
-                        post_task("funny lol", &mut map).await;
-                        tasks = get_tasks(&token.lock().unwrap().token).await.unwrap();
+                        post_task(&mut map.lock().unwrap()).await;
+                        tasks = Arc::new(Mutex::new(get_tasks().await.unwrap()));
                     }
                     _ => {}
                 },
                 KeyCode::Char('d') => match active_menu_item {
                     MenuItem::Tasks => {
                         if let Some(selected) = task_list_state.selected() {
-                            let id = tasks[selected].id.to_owned();
-                            let projects2 = Arc::clone(&projects);
-                            let project_id = &projects2.lock().unwrap()
-                                [project_list_state.selected().unwrap()]
-                            .id;
-                            let token2 = token.lock().unwrap().token.clone();
-                            tokio::spawn(async move { delete_task(&token2, id).await });
-                            tasks.remove(selected);
-                            if tasks.len() == 0 {
-                                active_menu_item = MenuItem::Projects;
-                            }
-                            if selected > 0 {
-                                task_list_state.select(Some(selected - 1));
-                            } else {
-                                task_list_state.select(Some(0));
+                            if let Some(selected_project) = project_list_state.selected() {
+                                let mut task_count = 0;
+                                let projects2 = Arc::clone(&projects);
+                                let projects2 = projects2.lock().unwrap();
+                                let tasks2 = Arc::clone(&tasks);
+                                let mut tasks2 = tasks2.lock().unwrap();
+                                let mut tasks_up = vec![];
+                                for i in 0..selected_project {
+                                    tasks_up.push(projects2[i].id.clone());
+                                }
+                                tasks2.iter().for_each(|task| {
+                                    if tasks_up.iter().any(|s| s.to_string() == task.project_id) {
+                                        task_count += 1;
+                                    }
+                                });
+                                let task_at_select = &tasks2[task_count + selected].id;
+                                delete_task(task_at_select.to_string()).await;
+                                *tasks2 = get_tasks().await.unwrap();
+                                tasks2.sort_by(|a, b| a.project_id.cmp(&b.project_id));
+
+                                let mut counter = 0;
+                                (0..tasks2.len()).for_each(|i| {
+                                    if projects2[selected_project].id == tasks2[i].project_id {
+                                        counter += 1;
+                                    }
+                                });
+                                if selected > 0 {
+                                    task_list_state.select(Some(selected - 1));
+                                } else if counter > 0 {
+                                    task_list_state.select(Some(selected + 1));
+                                } else {
+                                    active_menu_item = MenuItem::Projects;
+                                }
                             }
                         }
                     }
@@ -240,8 +294,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 continue;
                             }
                             let id = projects.lock().unwrap()[selected].id.to_owned();
-                            let token2 = token.lock().unwrap().token.clone();
-                            tokio::spawn(async move { delete_project(&token2, id).await });
+                            tokio::spawn(async move { delete_project(id).await });
                             projects.lock().unwrap().remove(selected);
                             if selected > 0 {
                                 project_list_state.select(Some(selected - 1));
@@ -278,6 +331,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .clone();
 
                             let task_items: Vec<_> = tasks
+                                .lock()
+                                .unwrap()
                                 .clone()
                                 .iter()
                                 .filter(|task| task.project_id == selected_project.id)
@@ -324,6 +379,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .clone();
 
                             let task_items: Vec<_> = tasks
+                                .lock()
+                                .unwrap()
                                 .clone()
                                 .iter()
                                 .filter(|task| task.project_id == selected_project.id)

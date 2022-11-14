@@ -95,9 +95,9 @@ impl Task {
 }
 
 #[allow(dead_code)]
-pub async fn get_projects(token: &str) -> Result<Vec<Project>, RError> {
-    let token = token;
-    let url = format!("Bearer {}", token);
+pub async fn get_projects() -> Result<Vec<Project>, RError> {
+    let token = Config::get_token();
+    let url = format!("Bearer {}", token.token);
     let client = reqwest::Client::new();
     let response = client
         .get("https://api.todoist.com/rest/v2/projects")
@@ -111,9 +111,9 @@ pub async fn get_projects(token: &str) -> Result<Vec<Project>, RError> {
 }
 
 #[allow(dead_code)]
-pub async fn delete_project(token: &str, project_id: String) -> Result<(), RError> {
-    let token = token;
-    let url = format!("Bearer {}", token);
+pub async fn delete_project(project_id: String) -> Result<(), RError> {
+    let token = Config::get_token();
+    let url = format!("Bearer {}", token.token);
     let client = reqwest::Client::new();
     let _ = client
         .delete(format!(
@@ -129,9 +129,9 @@ pub async fn delete_project(token: &str, project_id: String) -> Result<(), RErro
 }
 
 #[allow(dead_code)]
-pub async fn delete_task(token: &str, task_id: String) -> Result<(), RError> {
-    let token = token;
-    let url = format!("Bearer {}", token);
+pub async fn delete_task(task_id: String) -> Result<(), RError> {
+    let token = Config::get_token();
+    let url = format!("Bearer {}", token.token);
     let client = reqwest::Client::new();
     let _ = client
         .delete(format!("https://api.todoist.com/rest/v2/tasks/{}", task_id))
@@ -144,11 +144,11 @@ pub async fn delete_task(token: &str, task_id: String) -> Result<(), RError> {
 }
 
 #[allow(dead_code)]
-pub async fn post_projects(token: &str, name: &str) -> Result<Project, RError> {
+pub async fn post_projects(name: String) -> Result<Project, RError> {
     let mut map = HashMap::new();
     map.insert("name", name);
-    let token = token;
-    let autherization = format!("Bearer {}", token);
+    let token = Config::get_token();
+    let autherization = format!("Bearer {}", token.token);
     let client = reqwest::Client::new();
     let response = client
         .post("https://api.todoist.com/rest/v2/projects")
@@ -164,9 +164,9 @@ pub async fn post_projects(token: &str, name: &str) -> Result<Project, RError> {
 }
 
 #[allow(dead_code)]
-pub async fn get_tasks(token: &str) -> Result<Vec<Task>, RError> {
-    let token = token;
-    let url = format!("Bearer {}", token);
+pub async fn get_tasks() -> Result<Vec<Task>, RError> {
+    let token = Config::get_token();
+    let url = format!("Bearer {}", token.token);
     let client = reqwest::Client::new();
     let response = client
         .get("https://api.todoist.com/rest/v2/tasks")
@@ -180,11 +180,7 @@ pub async fn get_tasks(token: &str) -> Result<Vec<Task>, RError> {
 }
 
 #[allow(dead_code)]
-pub async fn post_task<'a>(
-    content: &'a str,
-    map: &mut HashMap<&str, &'a str>,
-) -> Result<Task, RError> {
-    map.insert("content", content);
+pub async fn post_task<'a>(map: &mut HashMap<String, String>) -> Result<Task, RError> {
     let token = Config::get_token();
     let autherization = format!("Bearer {}", token.token);
     let client = reqwest::Client::new();
