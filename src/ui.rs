@@ -1,18 +1,20 @@
+use std::sync::Mutex;
+
 use tui::{
     layout::{Alignment, Constraint},
     style::{Color, Modifier, Style},
     symbols,
     text::{Span, Spans},
-    widgets::{Block, BorderType, Borders, ListItem, Paragraph, Row, Table, TableState, Tabs},
+    widgets::{Block, BorderType, Borders, Paragraph, Row, Table, TableState, Tabs},
 };
 
 use crate::{
     api::{Project, Task},
-    MenuItem,
+    AddTaskHighlight, MenuItem,
 };
 
 pub fn render_menu_tabs(active_menu_item: MenuItem) -> Tabs<'static> {
-    let menu_titles = vec!["Home", "Projects", "Tasks"];
+    let menu_titles = vec!["Home", "Projects", "Tasks", "Add Task"];
 
     let menu: Vec<_> = menu_titles
         .iter()
@@ -26,7 +28,12 @@ pub fn render_menu_tabs(active_menu_item: MenuItem) -> Tabs<'static> {
 
     let menu_tabs = Tabs::new(menu)
         .select(active_menu_item.into())
-        .block(Block::default().title("Menu").borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title("Menu")
+                .title_alignment(Alignment::Center)
+                .borders(Borders::ALL),
+        )
         .style(Style::default().fg(Color::White))
         .highlight_style(
             Style::default()
@@ -84,6 +91,55 @@ pub fn render_home<'a>() -> Paragraph<'a> {
     home
 }
 
+pub fn render_add_tasks<'a>(
+    highlight: &AddTaskHighlight,
+) -> (
+    Block<'a>,
+    Block<'a>,
+    Block<'a>,
+    Block<'a>,
+    Block<'a>,
+    Block<'a>,
+) {
+    let outer = Block::default()
+        .title("Add Task")
+        .borders(Borders::ALL)
+        .style(Style::default().fg(Color::White))
+        .border_type(BorderType::Plain);
+
+    let name = Block::default()
+        .title("Name")
+        .borders(Borders::ALL)
+        .style(Style::default().fg(highlight.name))
+        .border_type(BorderType::Plain);
+
+    let desc = Block::default()
+        .title("Description")
+        .borders(Borders::ALL)
+        .style(Style::default().fg(highlight.desc))
+        .border_type(BorderType::Plain);
+
+    let prio = Block::default()
+        .title("Priority")
+        .borders(Borders::ALL)
+        .style(Style::default().fg(highlight.prio))
+        .border_type(BorderType::Plain);
+
+    let label = Block::default()
+        .title("Labers")
+        .borders(Borders::ALL)
+        .style(Style::default().fg(highlight.prio))
+        .border_type(BorderType::Plain);
+
+    let due = Block::default()
+        .title("Due date")
+        .borders(Borders::ALL)
+        .style(Style::default().fg(highlight.prio))
+        .border_type(BorderType::Plain);
+
+    (outer, name, desc, prio, label, due)
+}
+
 pub fn render_projects<'a>(
     project_table_state: &TableState,
     project_list: Vec<Project>,
@@ -93,12 +149,14 @@ pub fn render_projects<'a>(
         .borders(Borders::ALL)
         .style(Style::default().fg(Color::White))
         .title("Projects")
+        .title_alignment(Alignment::Center)
         .border_type(BorderType::Plain);
 
     let task_block = Block::default()
         .borders(Borders::ALL)
         .style(Style::default().fg(Color::White))
-        .border_type(BorderType::Plain);
+        .border_type(BorderType::Plain)
+        .title("Tasks");
 
     pub fn get_task_from_project_id(project_id: String, task_list: &mut Vec<Task>) -> String {
         let mut counter = 0;
@@ -155,7 +213,7 @@ pub fn render_projects<'a>(
     let task_list = Table::new(task_rows)
         .block(task_block)
         .header(
-            Row::new(vec!["Priority", "Name", "Description"]).style(
+            Row::new(vec!["Prio", "Name", "Description"]).style(
                 Style::default()
                     .add_modifier(Modifier::BOLD)
                     .fg(Color::LightRed),
@@ -169,9 +227,9 @@ pub fn render_projects<'a>(
         )
         .column_spacing(1)
         .widths(&[
-            Constraint::Length(11),
-            Constraint::Length(11),
-            Constraint::Length(40),
+            Constraint::Length(5),
+            Constraint::Length(15),
+            Constraint::Length(60),
         ]);
 
     (project_list, task_list)

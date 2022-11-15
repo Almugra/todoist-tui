@@ -2,6 +2,7 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::Error as RError;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use crate::config::Config;
 
@@ -73,23 +74,23 @@ pub struct Task {
 impl Task {
     pub fn new(content: String, project_id: String) -> Task {
         Task {
-            creator_id: "asd".to_owned(),
-            created_at: "asda".to_owned(),
+            creator_id: ".........".to_owned(),
+            created_at: ".........".to_owned(),
             assignee_id: None,
             assigner_id: None,
             comment_count: 0,
             is_completed: false,
             content,
-            description: "asda".to_owned(),
+            description: "........".to_owned(),
             due: None,
-            id: "asda".to_owned(),
+            id: "........".to_owned(),
             labels: vec![],
             order: 0,
             priority: 0,
             project_id,
             section_id: None,
             parent_id: None,
-            url: "asda".to_owned(),
+            url: "........".to_owned(),
         }
     }
 }
@@ -180,7 +181,8 @@ pub async fn get_tasks() -> Result<Vec<Task>, RError> {
 }
 
 #[allow(dead_code)]
-pub async fn post_task<'a>(map: &mut HashMap<String, String>) -> Result<Task, RError> {
+pub async fn post_task(map: Arc<Mutex<HashMap<String, String>>>) -> Result<Task, RError> {
+    let map2 = Arc::clone(&map).lock().unwrap().clone();
     let token = Config::get_token();
     let autherization = format!("Bearer {}", token.token);
     let client = reqwest::Client::new();
@@ -188,7 +190,7 @@ pub async fn post_task<'a>(map: &mut HashMap<String, String>) -> Result<Task, RE
         .post("https://api.todoist.com/rest/v2/tasks")
         .header(CONTENT_TYPE, "application/json")
         .header(AUTHORIZATION, autherization)
-        .json(&map)
+        .json(&map2)
         .send()
         .await
         .unwrap();
