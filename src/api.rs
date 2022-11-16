@@ -1,5 +1,6 @@
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::Error as RError;
+use serde::Deserialize;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -54,17 +55,19 @@ pub struct Due {
 pub struct TaskContent {
     pub content: String,
     pub description: String,
-    pub due: Option<Due>,
-    pub labels: Vec<String>,
+    pub labels: String,
+    pub priority: String,
+    pub due: String,
 }
 
 impl Default for TaskContent {
     fn default() -> Self {
         Self {
-            content: Default::default(),
-            description: Default::default(),
-            due: Default::default(),
-            labels: Default::default(),
+            content: String::new(),
+            description: String::new(),
+            labels: String::new(),
+            priority: String::from("1"),
+            due: String::new(),
         }
     }
 }
@@ -91,25 +94,31 @@ pub struct Task {
 }
 
 impl Task {
-    pub fn new(content: String, project_id: String) -> Task {
+    pub fn temp(task_content: TaskContent, project_id: String) -> Task {
+        let labels: Vec<String> = task_content
+            .labels
+            .replace(" ", "")
+            .split(',')
+            .map(|s| s.to_owned())
+            .collect();
         Task {
-            creator_id: ".........".to_owned(),
-            created_at: ".........".to_owned(),
+            creator_id: String::new(),
+            created_at: String::new(),
             assignee_id: None,
             assigner_id: None,
             comment_count: 0,
             is_completed: false,
-            content,
-            description: "........".to_owned(),
+            content: task_content.content,
+            description: task_content.description,
             due: None,
-            id: "........".to_owned(),
-            labels: vec![],
+            id: String::new(),
+            labels,
             order: 0,
-            priority: 0,
-            project_id,
+            priority: task_content.priority.parse::<usize>().unwrap(),
+            project_id: project_id.to_string(),
             section_id: None,
             parent_id: None,
-            url: "........".to_owned(),
+            url: String::new(),
         }
     }
 }
@@ -200,8 +209,7 @@ pub async fn get_tasks() -> Result<Vec<Task>, RError> {
 }
 
 #[allow(dead_code)]
-pub async fn post_task(map: Arc<Mutex<HashMap<String, String>>>) -> Result<Task, RError> {
-    let map2 = Arc::clone(&map).lock().unwrap().clone();
+pub async fn post_task(task: Task) -> Result<Task, RError> {
     let token = Config::get_token();
     let autherization = format!("Bearer {}", token.token);
     let client = reqwest::Client::new();
@@ -209,7 +217,7 @@ pub async fn post_task(map: Arc<Mutex<HashMap<String, String>>>) -> Result<Task,
         .post("https://api.todoist.com/rest/v2/tasks")
         .header(CONTENT_TYPE, "application/json")
         .header(AUTHORIZATION, autherization)
-        .json(&map2)
+        .json(&task)
         .send()
         .await
         .unwrap();

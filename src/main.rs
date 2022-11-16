@@ -16,7 +16,7 @@ use tui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Style},
     text::{Span, Spans},
-    widgets::{ListItem, Paragraph},
+    widgets::ListItem,
     Terminal,
 };
 use ui::{render_key_tabs, render_menu_tabs, render_task_item};
@@ -109,20 +109,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[allow(unused_variables)]
-pub fn get_map(current_selected_project: String) -> Arc<Mutex<HashMap<String, String>>> {
-    let mut_map: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
-    let map2 = Arc::clone(&mut_map);
-    map2.lock()
-        .unwrap()
-        .insert("project_id".to_owned(), current_selected_project);
-    let map = Arc::clone(&mut_map);
-    map.lock()
-        .unwrap()
-        .insert("content".to_owned(), "TestTask".to_owned());
-    return mut_map;
-}
-
 pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
     let (tx, rx) = mpsc::channel();
     let tick_rate = Duration::from_millis(200);
@@ -154,10 +140,7 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
     task_list_state.select(Some(0));
 
     let projects = Arc::new(Mutex::new(vec![Project::name("Loading...")]));
-    let tasks = Arc::new(Mutex::new(vec![Task::new(
-        "Loading...".to_string(),
-        "".to_string(),
-    )]));
+    let tasks = Arc::new(Mutex::new(vec![]));
     let projects2 = Arc::clone(&projects);
     tokio::spawn(async move {
         *projects2.lock().unwrap() = get_projects().await.unwrap();
@@ -170,11 +153,6 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
             .unwrap()
             .sort_by(|a, b| a.project_id.cmp(&b.project_id));
     });
-    let mut name_text = String::from("");
-    let mut desc_text = String::from("");
-    let mut label_text = String::from("");
-    let mut prio_text = String::from("1");
-    let mut due_text = String::from("");
     let mut active_task_item = TaskItem::Empty;
     let mut highlight = AddTaskHighlight::default();
     let mut task_content = TaskContent::default();
@@ -245,11 +223,7 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                         rect,
                         project_chunks.clone(),
                         &highlight,
-                        name_text.to_string(),
-                        desc_text.to_string(),
-                        label_text.to_string(),
-                        prio_text.to_string(),
-                        due_text.to_string(),
+                        task_content.clone(),
                     );
                 }
                 _ => {}
@@ -259,44 +233,53 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
         match rx.recv().unwrap() {
             Event::Input(event) => match event.code {
                 KeyCode::Esc if active_menu_item == MenuItem::AddTask => {
-                    name_text.clear();
-                    desc_text.clear();
+                    task_content = TaskContent::default();
                     highlight = AddTaskHighlight::default();
                     active_menu_item = MenuItem::Projects;
                     active_task_item = TaskItem::Empty;
                 }
                 KeyCode::Char(e) if active_menu_item == MenuItem::AddTask => match active_task_item
                 {
-                    TaskItem::Name => {
-                        name_text.push(e);
-                    }
-                    TaskItem::Desc => {
-                        desc_text.push(e);
-                    }
-                    TaskItem::Label => {
-                        label_text.push(e);
-                    }
-                    TaskItem::Prio => {
-                        prio_text.push(e);
-                    }
-                    TaskItem::Due => {
-                        due_text.push(e);
-                    }
+                    TaskItem::Name => task_content.content.push(e),
+                    TaskItem::Desc => task_content.description.push(e),
+                    TaskItem::Label => task_content.labels.push(e),
+                    TaskItem::Prio => task_content.priority.push(e),
+                    TaskItem::Due => task_content.due.push(e),
                     _ => {}
                 },
                 KeyCode::Backspace if active_menu_item == MenuItem::AddTask => {
                     match active_task_item {
-                        TaskItem::Name => {
-                            name_text.pop();
-                        }
-                        TaskItem::Desc => {
-                            desc_text.pop();
-                        }
-                        TaskItem::Label => {}
-                        TaskItem::Prio => {}
-                        TaskItem::Due => {}
-                        _ => {}
-                    }
+                        TaskItem::Name => task_content.content.pop(),
+                        TaskItem::Desc => task_content.description.pop(),
+                        TaskItem::Label => task_content.labels.pop(),
+                        TaskItem::Prio => task_content.priority.pop(),
+                        TaskItem::Due => task_content.due.pop(),
+                        _ => None,
+                    };
+                }
+                KeyCode::Enter if active_menu_item == MenuItem::AddTask => {
+                    let tasks2 = Arc::clone(&tasks);
+                    let projects2 = Arc::clone(&projects);
+                    let current_selected_project =
+                        &projects2.lock().unwrap()[project_list_state.selected().unwrap()].id;
+                    let temp_task =
+                        Task::temp(task_content.clone(), current_selected_project.to_string());
+                    let temp_task2 =
+                        Task::temp(task_content.clone(), current_selected_project.to_string());
+                    tasks.lock().unwrap().push(temp_task.clone());
+                    let tasks4 = Arc::clone(&tasks);
+                    tokio::spawn(async move {
+                        let _ = post_task(temp_task2).await;
+                        *tasks2.lock().unwrap() = get_tasks().await.unwrap();
+                        tasks4
+                            .lock()
+                            .unwrap()
+                            .sort_by(|a, b| a.project_id.cmp(&b.project_id));
+                    });
+                    task_content = TaskContent::default();
+                    highlight = AddTaskHighlight::default();
+                    active_menu_item = MenuItem::Projects;
+                    active_task_item = TaskItem::Empty;
                 }
                 KeyCode::Tab if active_menu_item == MenuItem::AddTask => match active_task_item {
                     TaskItem::Name => {
@@ -407,23 +390,6 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                             active_menu_item = MenuItem::AddTask;
                             active_task_item = TaskItem::Name;
                             highlight.name = Color::LightRed;
-                            //let tasks2 = Arc::clone(&tasks);
-                            //let projects2 = Arc::clone(&projects);
-                            //let current_selected_project = &projects2.lock().unwrap()[selected].id;
-                            //tasks.lock().unwrap().push(Task::new(
-                            //    "TestTask".to_string(),
-                            //    current_selected_project.to_string(),
-                            //));
-                            //let map = get_map(current_selected_project.to_string());
-                            //let tasks4 = Arc::clone(&tasks);
-                            //tokio::spawn(async move {
-                            //    let _ = post_task(map).await;
-                            //    *tasks2.lock().unwrap() = get_tasks().await.unwrap();
-                            //    tasks4
-                            //        .lock()
-                            //        .unwrap()
-                            //        .sort_by(|a, b| a.project_id.cmp(&b.project_id));
-                            //});
                         }
                     }
                     _ => {}

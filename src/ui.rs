@@ -9,7 +9,7 @@ use tui::{
 };
 
 use crate::{
-    api::{Project, Task},
+    api::{Project, Task, TaskContent},
     AddTaskHighlight, MenuItem,
 };
 
@@ -228,7 +228,7 @@ pub fn render_projects<'a>(
         .column_spacing(1)
         .widths(&[
             Constraint::Length(5),
-            Constraint::Length(15),
+            Constraint::Length(25),
             Constraint::Length(60),
         ]);
 
@@ -239,11 +239,7 @@ pub fn render_task_item<'a, B: Backend>(
     rect: &mut Frame<B>,
     project_chunks: Vec<Rect>,
     highlight: &AddTaskHighlight,
-    name_text: String,
-    desc_text: String,
-    label_text: String,
-    prio_text: String,
-    due_text: String,
+    task_content: TaskContent,
 ) -> () {
     let task_width_33 = Layout::default()
         .direction(Direction::Horizontal)
@@ -304,19 +300,19 @@ pub fn render_task_item<'a, B: Backend>(
         .split(task_width_full[0]);
 
     let (outer, name, desc, prio, label, due) = render_add_tasks(&highlight);
-    let name = Paragraph::new(name_text.as_ref())
+    let name = Paragraph::new(task_content.content.as_ref())
         .style(Style::default().fg(Color::White))
         .block(name);
-    let desc = Paragraph::new(desc_text.as_ref())
+    let desc = Paragraph::new(task_content.description.as_ref())
         .style(Style::default().fg(Color::White))
         .block(desc);
-    let label = Paragraph::new(label_text.as_ref())
+    let label = Paragraph::new(task_content.labels.as_ref())
         .style(Style::default().fg(Color::White))
         .block(label);
-    let prio = Paragraph::new(prio_text.as_ref())
+    let prio = Paragraph::new(task_content.priority.as_ref())
         .style(Style::default().fg(Color::White))
         .block(prio);
-    let due = Paragraph::new(due_text.as_ref())
+    let due = Paragraph::new(task_content.due.as_ref())
         .style(Style::default().fg(Color::White))
         .block(due);
     rect.render_widget(outer, project_chunks[1]);
