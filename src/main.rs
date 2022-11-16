@@ -1,10 +1,10 @@
-use api::{delete_task, get_tasks, post_projects, Task, TaskContent};
+use api::{delete_task, get_tasks, post_projects, PostProject, Task, TaskContent};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event as CEvent, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use std::{collections::HashMap, thread};
+use std::thread;
 use std::{io, sync::mpsc, vec};
 use std::{
     sync::{Arc, Mutex},
@@ -19,7 +19,7 @@ use tui::{
     widgets::ListItem,
     Terminal,
 };
-use ui::{render_key_tabs, render_menu_tabs, render_task_item};
+use ui::{render_key_tabs, render_menu_tabs, render_project_item, render_task_item};
 pub mod api;
 pub mod config;
 pub mod ui;
@@ -60,6 +60,12 @@ pub enum TaskItem {
     Prio,
     Label,
     Due,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ProjectItem {
+    Empty,
+    Name,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -157,6 +163,9 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
     let mut highlight = AddTaskHighlight::default();
     let mut task_content = TaskContent::default();
 
+    let mut active_project_item = ProjectItem::Empty;
+    let mut project_item = PostProject::default();
+
     loop {
         terminal.draw(|rect| {
             let size = rect.size();
@@ -165,6 +174,25 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                 .direction(Direction::Vertical)
                 .margin(2)
                 .constraints([Constraint::Length(3), Constraint::Min(2)].as_ref())
+                .split(size);
+
+            let project_add_chunk = Layout::default()
+                .direction(Direction::Vertical)
+                .margin(2)
+                .constraints([Constraint::Length(6), Constraint::Min(50)].as_ref())
+                .split(size);
+
+            let project_add_chunk2 = Layout::default()
+                .direction(Direction::Vertical)
+                .margin(2)
+                .constraints(
+                    [
+                        Constraint::Length(3),
+                        Constraint::Length(3),
+                        Constraint::Min(50),
+                    ]
+                    .as_ref(),
+                )
                 .split(size);
 
             let menu_chunks = Layout::default()
@@ -176,6 +204,16 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(20), Constraint::Percentage(80)].as_ref())
                 .split(chunks[1]);
+
+            let project_chunks_2 = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(20), Constraint::Percentage(80)].as_ref())
+                .split(project_add_chunk[1]);
+
+            let project_chunks_add = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(20), Constraint::Percentage(80)].as_ref())
+                .split(project_add_chunk2[1]);
 
             let menu_tabs = render_menu_tabs(active_menu_item);
             rect.render_widget(menu_tabs, menu_chunks[0]);
@@ -210,15 +248,27 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                     );
                     rect.render_stateful_widget(left, project_chunks[0], &mut project_list_state);
                 }
-                _ => {}
+                MenuItem::AddProject => {
+                    let (left, right) = ui::render_projects(
+                        &project_list_state,
+                        projects.lock().unwrap().clone(),
+                        &mut tasks.lock().unwrap().clone(),
+                    );
+                    rect.set_cursor(
+                        project_chunks_add[0].x + project_item.name.len() as u16 + 1,
+                        project_chunks_add[0].y + 1,
+                    );
+                    rect.render_widget(left, project_chunks_2[0]);
+                    rect.render_widget(right, project_chunks[1]);
+                }
+            }
+
+            if active_project_item == ProjectItem::Name {
+                render_project_item(rect, project_chunks_add.clone(), project_item.clone());
             }
 
             match active_task_item {
                 _ if active_task_item != TaskItem::Empty => {
-                    //rect.set_cursor(
-                    //    project_chunks[1].x + desc_text.len() as u16 + 1,
-                    //    project_chunks[1].y + 1,
-                    //);
                     render_task_item(
                         rect,
                         project_chunks.clone(),
@@ -232,29 +282,54 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
 
         match rx.recv().unwrap() {
             Event::Input(event) => match event.code {
-                KeyCode::Esc if active_menu_item == MenuItem::AddTask => {
+                KeyCode::Esc
+                    if active_menu_item == MenuItem::AddTask
+                        || active_menu_item == MenuItem::AddProject =>
+                {
+                    active_menu_item = MenuItem::Projects;
+
                     task_content = TaskContent::default();
                     highlight = AddTaskHighlight::default();
-                    active_menu_item = MenuItem::Projects;
                     active_task_item = TaskItem::Empty;
+
+                    project_item = PostProject::default();
+                    active_project_item = ProjectItem::Empty;
                 }
-                KeyCode::Char(e) if active_menu_item == MenuItem::AddTask => match active_task_item
+                KeyCode::Char(e)
+                    if active_menu_item == MenuItem::AddTask
+                        || active_menu_item == MenuItem::AddProject =>
                 {
-                    TaskItem::Name => task_content.content.push(e),
-                    TaskItem::Desc => task_content.description.push(e),
-                    TaskItem::Label => task_content.labels.push(e),
-                    TaskItem::Prio => task_content.priority.push(e),
-                    TaskItem::Due => task_content.due.push(e),
-                    _ => {}
-                },
-                KeyCode::Backspace if active_menu_item == MenuItem::AddTask => {
+                    match active_task_item {
+                        TaskItem::Name => task_content.content.push(e),
+                        TaskItem::Desc => task_content.description.push(e),
+                        TaskItem::Label => task_content.labels.push(e),
+                        TaskItem::Prio => {
+                            task_content.priority.push(e);
+                            if task_content.priority.len() > 1 {}
+                        }
+                        TaskItem::Due => task_content.due_string.push(e),
+                        _ => {}
+                    }
+                    match active_project_item {
+                        ProjectItem::Name => project_item.name.push(e),
+                        ProjectItem::Empty => {}
+                    };
+                }
+                KeyCode::Backspace
+                    if active_menu_item == MenuItem::AddTask
+                        || active_menu_item == MenuItem::AddProject =>
+                {
                     match active_task_item {
                         TaskItem::Name => task_content.content.pop(),
                         TaskItem::Desc => task_content.description.pop(),
                         TaskItem::Label => task_content.labels.pop(),
                         TaskItem::Prio => task_content.priority.pop(),
-                        TaskItem::Due => task_content.due.pop(),
+                        TaskItem::Due => task_content.due_string.pop(),
                         _ => None,
+                    };
+                    match active_project_item {
+                        ProjectItem::Name => project_item.name.pop(),
+                        ProjectItem::Empty => None,
                     };
                 }
                 KeyCode::Enter if active_menu_item == MenuItem::AddTask => {
@@ -280,6 +355,19 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                     highlight = AddTaskHighlight::default();
                     active_menu_item = MenuItem::Projects;
                     active_task_item = TaskItem::Empty;
+                }
+                KeyCode::Enter if active_menu_item == MenuItem::AddProject => {
+                    let projects2 = Arc::clone(&projects);
+                    let temp_project = Project::name(&project_item.name);
+                    projects2.lock().unwrap().push(temp_project.clone());
+                    let projects2 = Arc::clone(&projects);
+                    tokio::spawn(async move {
+                        let _ = post_projects(project_item).await;
+                        *projects2.lock().unwrap() = get_projects().await.unwrap();
+                    });
+                    project_item = PostProject::default();
+                    active_menu_item = MenuItem::Projects;
+                    active_project_item = ProjectItem::Empty;
                 }
                 KeyCode::Tab if active_menu_item == MenuItem::AddTask => match active_task_item {
                     TaskItem::Name => {
@@ -374,23 +462,16 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                 },
                 KeyCode::Char('p') => match active_menu_item {
                     MenuItem::Projects => {
-                        let projects2 = Arc::clone(&projects);
-                        projects2.lock().unwrap().push(Project::name("PogU"));
-                        let projects2 = Arc::clone(&projects);
-                        tokio::spawn(async move {
-                            let _ = post_projects("PogU".to_string()).await;
-                            *projects2.lock().unwrap() = get_projects().await.unwrap();
-                        });
+                        active_project_item = ProjectItem::Name;
+                        active_menu_item = MenuItem::AddProject;
                     }
                     _ => {}
                 },
                 KeyCode::Char('a') => match active_menu_item {
                     MenuItem::Projects | MenuItem::Tasks => {
-                        if let Some(selected) = project_list_state.selected() {
-                            active_menu_item = MenuItem::AddTask;
-                            active_task_item = TaskItem::Name;
-                            highlight.name = Color::LightRed;
-                        }
+                        active_menu_item = MenuItem::AddTask;
+                        active_task_item = TaskItem::Name;
+                        highlight.name = Color::LightRed;
                     }
                     _ => {}
                 },

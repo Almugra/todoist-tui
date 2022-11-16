@@ -1,9 +1,8 @@
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::Error as RError;
-use serde::Deserialize;
+
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 
 use crate::config::Config;
 
@@ -43,36 +42,6 @@ impl Project {
 }
 
 #[derive(Deserialize, Debug, Serialize, Clone)]
-pub struct Due {
-    pub date: String,
-    pub is_recurring: bool,
-    pub datetime: String,
-    pub string: String,
-    pub timezone: String,
-}
-
-#[derive(Deserialize, Debug, Serialize, Clone)]
-pub struct TaskContent {
-    pub content: String,
-    pub description: String,
-    pub labels: String,
-    pub priority: String,
-    pub due: String,
-}
-
-impl Default for TaskContent {
-    fn default() -> Self {
-        Self {
-            content: String::new(),
-            description: String::new(),
-            labels: String::new(),
-            priority: String::from("1"),
-            due: String::new(),
-        }
-    }
-}
-
-#[derive(Deserialize, Debug, Serialize, Clone)]
 pub struct Task {
     pub creator_id: String,
     pub created_at: String,
@@ -82,7 +51,6 @@ pub struct Task {
     pub is_completed: bool,
     pub content: String,
     pub description: String,
-    pub due: Option<Due>,
     pub id: String,
     pub labels: Vec<String>,
     pub order: usize,
@@ -90,7 +58,12 @@ pub struct Task {
     pub project_id: String,
     pub section_id: Option<String>,
     pub parent_id: Option<String>,
+    pub due_string: Option<String>,
     pub url: String,
+    pub date: Option<String>,
+    pub is_recurring: Option<bool>,
+    pub datetime: Option<String>,
+    pub timezone: Option<String>,
 }
 
 impl Task {
@@ -101,6 +74,7 @@ impl Task {
             .split(',')
             .map(|s| s.to_owned())
             .collect();
+
         Task {
             creator_id: String::new(),
             created_at: String::new(),
@@ -110,7 +84,6 @@ impl Task {
             is_completed: false,
             content: task_content.content,
             description: task_content.description,
-            due: None,
             id: String::new(),
             labels,
             order: 0,
@@ -118,7 +91,46 @@ impl Task {
             project_id: project_id.to_string(),
             section_id: None,
             parent_id: None,
+            due_string: Some(task_content.due_string),
             url: String::new(),
+            date: None,
+            is_recurring: None,
+            datetime: None,
+            timezone: None,
+        }
+    }
+}
+
+#[derive(Deserialize, Debug, Serialize, Clone)]
+pub struct PostProject {
+    pub name: String,
+}
+
+impl Default for PostProject {
+    fn default() -> Self {
+        Self {
+            name: Default::default(),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug, Serialize, Clone)]
+pub struct TaskContent {
+    pub content: String,
+    pub description: String,
+    pub labels: String,
+    pub priority: String,
+    pub due_string: String,
+}
+
+impl Default for TaskContent {
+    fn default() -> Self {
+        Self {
+            content: String::new(),
+            description: String::new(),
+            labels: String::new(),
+            priority: String::from("1"),
+            due_string: String::new(),
         }
     }
 }
@@ -173,9 +185,7 @@ pub async fn delete_task(task_id: String) -> Result<(), RError> {
 }
 
 #[allow(dead_code)]
-pub async fn post_projects(name: String) -> Result<Project, RError> {
-    let mut map = HashMap::new();
-    map.insert("name", name);
+pub async fn post_projects(project: PostProject) -> Result<Project, RError> {
     let token = Config::get_token();
     let autherization = format!("Bearer {}", token.token);
     let client = reqwest::Client::new();
@@ -183,7 +193,7 @@ pub async fn post_projects(name: String) -> Result<Project, RError> {
         .post("https://api.todoist.com/rest/v2/projects")
         .header(CONTENT_TYPE, "application/json")
         .header(AUTHORIZATION, autherization)
-        .json(&map)
+        .json(&project)
         .send()
         .await
         .unwrap();

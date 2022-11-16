@@ -4,17 +4,17 @@ use tui::{
     style::{Color, Modifier, Style},
     symbols,
     text::{Span, Spans},
-    widgets::{Block, BorderType, Borders, Paragraph, Row, Table, TableState, Tabs, Widget},
+    widgets::{Block, BorderType, Borders, Paragraph, Row, Table, TableState, Tabs},
     Frame,
 };
 
 use crate::{
-    api::{Project, Task, TaskContent},
+    api::{PostProject, Project, Task, TaskContent},
     AddTaskHighlight, MenuItem,
 };
 
 pub fn render_menu_tabs(active_menu_item: MenuItem) -> Tabs<'static> {
-    let menu_titles = vec!["Home", "Projects", "Tasks", "Add Task"];
+    let menu_titles = vec!["Home", "Projects", "Tasks"];
 
     let menu: Vec<_> = menu_titles
         .iter()
@@ -46,7 +46,7 @@ pub fn render_menu_tabs(active_menu_item: MenuItem) -> Tabs<'static> {
 }
 
 pub fn render_key_tabs() -> Tabs<'static> {
-    let key_titles = vec!["Add", "Delete", "Quit"];
+    let key_titles = vec!["Add Task", "Post Project", "Delete", "Quit"];
     let keybinds: Vec<_> = key_titles
         .iter()
         .map(|t| {
@@ -235,6 +235,23 @@ pub fn render_projects<'a>(
     (project_list, task_list)
 }
 
+pub fn render_project_item<B: Backend>(
+    rect: &mut Frame<B>,
+    project_chunks: Vec<Rect>,
+    project_item: PostProject,
+) {
+    let name = Block::default()
+        .title("Add Project")
+        .borders(Borders::ALL)
+        .style(Style::default().fg(Color::LightRed))
+        .border_type(BorderType::Plain);
+
+    let name = Paragraph::new(project_item.name.as_ref())
+        .style(Style::default().fg(Color::White))
+        .block(name);
+    rect.render_widget(name, project_chunks[0]);
+}
+
 pub fn render_task_item<'a, B: Backend>(
     rect: &mut Frame<B>,
     project_chunks: Vec<Rect>,
@@ -312,7 +329,7 @@ pub fn render_task_item<'a, B: Backend>(
     let prio = Paragraph::new(task_content.priority.as_ref())
         .style(Style::default().fg(Color::White))
         .block(prio);
-    let due = Paragraph::new(task_content.due.as_ref())
+    let due = Paragraph::new(task_content.due_string.as_ref())
         .style(Style::default().fg(Color::White))
         .block(due);
     rect.render_widget(outer, project_chunks[1]);
