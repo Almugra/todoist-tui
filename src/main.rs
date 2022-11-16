@@ -2,7 +2,9 @@ use api::{delete_task, get_tasks, post_projects, PostProject, Task, TaskContent}
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event as CEvent, KeyCode},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{
+        self, disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    },
 };
 use std::thread;
 use std::{io, sync::mpsc, vec};
@@ -170,7 +172,7 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
         terminal.draw(|rect| {
             let size = rect.size();
 
-            let chunks = Layout::default()
+            let top_bottom_fullscreen = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(2)
                 .constraints([Constraint::Length(3), Constraint::Min(2)].as_ref())
@@ -195,15 +197,15 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                 )
                 .split(size);
 
-            let menu_chunks = Layout::default()
+            let left_right_top = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(20), Constraint::Percentage(80)].as_ref())
-                .split(chunks[0]);
+                .split(top_bottom_fullscreen[0]);
 
-            let project_chunks = Layout::default()
+            let left_right_bottom = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(20), Constraint::Percentage(80)].as_ref())
-                .split(chunks[1]);
+                .split(top_bottom_fullscreen[1]);
 
             let project_chunks_2 = Layout::default()
                 .direction(Direction::Horizontal)
@@ -216,20 +218,24 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                 .split(project_add_chunk2[1]);
 
             let menu_tabs = render_menu_tabs(active_menu_item);
-            rect.render_widget(menu_tabs, menu_chunks[0]);
+            rect.render_widget(menu_tabs, left_right_top[0]);
             let key_tabs = render_key_tabs();
-            rect.render_widget(key_tabs, menu_chunks[1]);
+            rect.render_widget(key_tabs, left_right_top[1]);
 
             match active_menu_item {
-                MenuItem::Home => rect.render_widget(ui::render_home(), chunks[1]),
+                MenuItem::Home => rect.render_widget(ui::render_home(), top_bottom_fullscreen[1]),
                 MenuItem::Projects => {
                     let (left, right) = ui::render_projects(
                         &project_list_state,
                         projects.lock().unwrap().clone(),
                         &mut tasks.lock().unwrap().clone(),
                     );
-                    rect.render_stateful_widget(left, project_chunks[0], &mut project_list_state);
-                    rect.render_widget(right, project_chunks[1]);
+                    rect.render_stateful_widget(
+                        left,
+                        left_right_bottom[0],
+                        &mut project_list_state,
+                    );
+                    rect.render_widget(right, left_right_bottom[1]);
                 }
                 MenuItem::Tasks => {
                     let (left, right) = ui::render_projects(
@@ -237,8 +243,12 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                         projects.lock().unwrap().clone(),
                         &mut tasks.lock().unwrap().clone(),
                     );
-                    rect.render_stateful_widget(left, project_chunks[0], &mut project_list_state);
-                    rect.render_stateful_widget(right, project_chunks[1], &mut task_list_state);
+                    rect.render_stateful_widget(
+                        left,
+                        left_right_bottom[0],
+                        &mut project_list_state,
+                    );
+                    rect.render_stateful_widget(right, left_right_bottom[1], &mut task_list_state);
                 }
                 MenuItem::AddTask => {
                     let (left, _) = ui::render_projects(
@@ -246,7 +256,11 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                         projects.lock().unwrap().clone(),
                         &mut tasks.lock().unwrap().clone(),
                     );
-                    rect.render_stateful_widget(left, project_chunks[0], &mut project_list_state);
+                    rect.render_stateful_widget(
+                        left,
+                        left_right_bottom[0],
+                        &mut project_list_state,
+                    );
                 }
                 MenuItem::AddProject => {
                     let (left, right) = ui::render_projects(
@@ -259,7 +273,7 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                         project_chunks_add[0].y + 1,
                     );
                     rect.render_widget(left, project_chunks_2[0]);
-                    rect.render_widget(right, project_chunks[1]);
+                    rect.render_widget(right, left_right_bottom[1]);
                 }
             }
 
@@ -269,11 +283,46 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
 
             match active_task_item {
                 _ if active_task_item != TaskItem::Empty => {
+                    let mut x = left_right_bottom[1].x + 3;
+                    let mut y = left_right_bottom[1].y;
+                    let task_width_33 = Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints([
+                            Constraint::Percentage(33),
+                            Constraint::Percentage(33),
+                            Constraint::Percentage(33),
+                        ])
+                        .split(left_right_bottom[1]);
+                    match active_task_item {
+                        TaskItem::Name => {
+                            x += task_content.content.len() as u16;
+                            y += 3;
+                        }
+                        TaskItem::Desc => {
+                            x += task_content.description.len() as u16;
+                            y += 6;
+                        }
+                        TaskItem::Label => {
+                            x += task_content.labels.len() as u16;
+                            y += 9;
+                        }
+                        TaskItem::Prio => {
+                            x += task_content.priority.len() as u16;
+                            y += 12;
+                        }
+                        TaskItem::Due => {
+                            x = task_content.due_string.len() as u16 + task_width_33[1].x + 3;
+                            y += 12;
+                        }
+                        _ => {}
+                    }
+                    rect.set_cursor(x, y);
                     render_task_item(
                         rect,
-                        project_chunks.clone(),
+                        left_right_bottom.clone(),
                         &highlight,
                         task_content.clone(),
+                        task_width_33,
                     );
                 }
                 _ => {}

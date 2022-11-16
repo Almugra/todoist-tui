@@ -10,7 +10,7 @@ use tui::{
 
 use crate::{
     api::{PostProject, Project, Task, TaskContent},
-    AddTaskHighlight, MenuItem,
+    AddTaskHighlight, MenuItem, TaskItem,
 };
 
 pub fn render_menu_tabs(active_menu_item: MenuItem) -> Tabs<'static> {
@@ -120,19 +120,19 @@ pub fn render_add_tasks<'a>(
         .border_type(BorderType::Plain);
 
     let label = Block::default()
-        .title("Labels")
+        .title("Labels • Separate with comma")
         .borders(Borders::ALL)
         .style(Style::default().fg(highlight.label))
         .border_type(BorderType::Plain);
 
     let prio = Block::default()
-        .title("Priority")
+        .title("Priority • Highest = 4 and Lowest = 1")
         .borders(Borders::ALL)
         .style(Style::default().fg(highlight.prio))
         .border_type(BorderType::Plain);
 
     let due = Block::default()
-        .title("Due date")
+        .title("Due date • e.g. 'Next week friday at 12:00' ")
         .borders(Borders::ALL)
         .style(Style::default().fg(highlight.due))
         .border_type(BorderType::Plain);
@@ -192,6 +192,7 @@ pub fn render_projects<'a>(
         .filter(|task| task.project_id == selected_project.id)
         .map(|task| {
             Row::new(vec![
+                "".to_owned(),
                 task.priority.to_string(),
                 task.content.to_string(),
                 task.description.to_string(),
@@ -214,7 +215,7 @@ pub fn render_projects<'a>(
     let task_list = Table::new(task_rows)
         .block(task_block)
         .header(
-            Row::new(vec!["Prio", "Name", "Description", "Labels"]).style(
+            Row::new(vec!["", "Prio", "Name", "Description", "Labels"]).style(
                 Style::default()
                     .add_modifier(Modifier::BOLD)
                     .fg(Color::LightRed),
@@ -228,6 +229,7 @@ pub fn render_projects<'a>(
         )
         .column_spacing(1)
         .widths(&[
+            Constraint::Length(1),
             Constraint::Length(5),
             Constraint::Length(25),
             Constraint::Length(25),
@@ -260,19 +262,8 @@ pub fn render_task_item<'a, B: Backend>(
     project_chunks: Vec<Rect>,
     highlight: &AddTaskHighlight,
     task_content: TaskContent,
+    task_width_33: Vec<Rect>,
 ) -> () {
-    let task_width_33 = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints(
-            [
-                Constraint::Percentage(33),
-                Constraint::Percentage(33),
-                Constraint::Percentage(33),
-            ]
-            .as_ref(),
-        )
-        .split(project_chunks[1]);
-
     let task_width_full = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(100)].as_ref())
