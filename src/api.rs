@@ -2,7 +2,6 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::Error as RError;
 
 use serde_derive::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 use crate::config::Config;
 

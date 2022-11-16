@@ -195,6 +195,7 @@ pub fn render_projects<'a>(
                 task.priority.to_string(),
                 task.content.to_string(),
                 task.description.to_string(),
+                task.labels.join(", "),
             ])
         })
         .collect();
@@ -213,7 +214,7 @@ pub fn render_projects<'a>(
     let task_list = Table::new(task_rows)
         .block(task_block)
         .header(
-            Row::new(vec!["Prio", "Name", "Description"]).style(
+            Row::new(vec!["Prio", "Name", "Description", "Labels"]).style(
                 Style::default()
                     .add_modifier(Modifier::BOLD)
                     .fg(Color::LightRed),
@@ -228,6 +229,8 @@ pub fn render_projects<'a>(
         .column_spacing(1)
         .widths(&[
             Constraint::Length(5),
+            Constraint::Length(25),
+            Constraint::Length(25),
             Constraint::Length(25),
             Constraint::Length(60),
         ]);
