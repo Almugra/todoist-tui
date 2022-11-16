@@ -1,42 +1,37 @@
-use api::{delete_task, get_tasks, post_projects, Task};
+use api::{delete_task, get_tasks, post_projects, Task, TaskContent};
 use crossterm::{
-    event::{self, Event as CEvent, KeyCode},
-    terminal::{disable_raw_mode, enable_raw_mode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event as CEvent, KeyCode},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-#[allow(unused_imports)]
 use std::{collections::HashMap, thread};
 use std::{io, sync::mpsc, vec};
 use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
-use tokio::sync::Mutex as TMutex;
-use tui::widgets::TableState;
-#[allow(unused_imports)]
+use tui::{backend::Backend, widgets::TableState};
 use tui::{
     backend::CrosstermBackend,
-    layout::{Alignment, Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
+    layout::{Constraint, Direction, Layout},
+    style::{Color, Style},
     text::{Span, Spans},
-    widgets::{
-        Block, BorderType, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, Tabs,
-    },
+    widgets::{ListItem, Paragraph},
     Terminal,
 };
-#[allow(unused_imports)]
-use tui::{style, symbols};
-use ui::{render_key_tabs, render_menu_tabs};
+use ui::{render_key_tabs, render_menu_tabs, render_task_item};
 pub mod api;
 pub mod config;
 pub mod ui;
-#[allow(unused_imports)]
 use crate::api::{delete_project, get_projects, post_task, Project};
 
 #[derive(Copy, Clone, Debug)]
 pub struct AddTaskHighlight {
     pub name: Color,
     pub desc: Color,
+    pub label: Color,
     pub prio: Color,
+    pub due: Color,
 }
 
 impl Default for AddTaskHighlight {
@@ -44,16 +39,11 @@ impl Default for AddTaskHighlight {
         Self {
             name: Color::White,
             desc: Color::White,
+            label: Color::White,
             prio: Color::White,
+            due: Color::White,
         }
     }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub enum AddTaskItem {
-    Name,
-    Desc,
-    Prio,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -62,7 +52,17 @@ enum Event<I> {
     Tick,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum TaskItem {
+    Empty,
+    Name,
+    Desc,
+    Prio,
+    Label,
+    Due,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum MenuItem {
     Home,
     Projects,
@@ -83,14 +83,49 @@ impl From<MenuItem> for usize {
     }
 }
 
-#[allow(unused_must_use, unused_variables)]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    enable_raw_mode().expect("can runin raw mode");
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+    terminal.clear()?;
+
+    let res = run_app(&mut terminal);
+
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+
+    if let Err(err) = res {
+        println!("{:?}", err)
+    }
+
+    Ok(())
+}
+
+#[allow(unused_variables)]
+pub fn get_map(current_selected_project: String) -> Arc<Mutex<HashMap<String, String>>> {
+    let mut_map: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
+    let map2 = Arc::clone(&mut_map);
+    map2.lock()
+        .unwrap()
+        .insert("project_id".to_owned(), current_selected_project);
+    let map = Arc::clone(&mut_map);
+    map.lock()
+        .unwrap()
+        .insert("content".to_owned(), "TestTask".to_owned());
+    return mut_map;
+}
+
+pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
     let (tx, rx) = mpsc::channel();
     let tick_rate = Duration::from_millis(200);
-    let project_id_tasks: HashMap<String, Vec<String>> = HashMap::new();
-
     thread::spawn(move || {
         let mut last_tick = Instant::now();
         loop {
@@ -112,20 +147,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let stdout = io::stdout();
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-    terminal.clear()?;
-
     let mut active_menu_item = MenuItem::Home;
     let mut project_list_state = TableState::default();
     project_list_state.select(Some(0));
     let mut task_list_state = TableState::default();
     task_list_state.select(Some(0));
 
-    let mut highlight = AddTaskHighlight::default();
     let projects = Arc::new(Mutex::new(vec![Project::name("Loading...")]));
-    let mut tasks = Arc::new(Mutex::new(vec![Task::new(
+    let tasks = Arc::new(Mutex::new(vec![Task::new(
         "Loading...".to_string(),
         "".to_string(),
     )]));
@@ -141,6 +170,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap()
             .sort_by(|a, b| a.project_id.cmp(&b.project_id));
     });
+    let mut name_text = String::from("");
+    let mut desc_text = String::from("");
+    let mut label_text = String::from("");
+    let mut prio_text = String::from("1");
+    let mut due_text = String::from("");
+    let mut active_task_item = TaskItem::Empty;
+    let mut highlight = AddTaskHighlight::default();
+    let mut task_content = TaskContent::default();
 
     loop {
         terminal.draw(|rect| {
@@ -188,94 +225,137 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     rect.render_stateful_widget(right, project_chunks[1], &mut task_list_state);
                 }
                 MenuItem::AddTask => {
-                    let task_width_33 = Layout::default()
-                        .direction(Direction::Horizontal)
-                        .constraints(
-                            [
-                                Constraint::Percentage(33),
-                                Constraint::Percentage(33),
-                                Constraint::Percentage(33),
-                            ]
-                            .as_ref(),
-                        )
-                        .split(project_chunks[1]);
-
-                    let task_width_full = Layout::default()
-                        .direction(Direction::Horizontal)
-                        .constraints([Constraint::Percentage(100)].as_ref())
-                        .split(project_chunks[1]);
-
-                    let (left, right) = ui::render_projects(
+                    let (left, _) = ui::render_projects(
                         &project_list_state,
                         projects.lock().unwrap().clone(),
                         &mut tasks.lock().unwrap().clone(),
                     );
-
-                    let desc_width = Layout::default()
-                        .direction(Direction::Vertical)
-                        .margin(2)
-                        .constraints([
-                            Constraint::Percentage(8),
-                            Constraint::Percentage(8),
-                            Constraint::Percentage(8),
-                            Constraint::Percentage(8),
-                            Constraint::Percentage(8),
-                            Constraint::Percentage(8),
-                            Constraint::Percentage(8),
-                            Constraint::Percentage(8),
-                        ])
-                        .split(task_width_full[0]);
-
-                    let add_task_chunks_left = Layout::default()
-                        .direction(Direction::Vertical)
-                        .margin(2)
-                        .constraints([
-                            Constraint::Percentage(8),
-                            Constraint::Percentage(8),
-                            Constraint::Percentage(8),
-                            Constraint::Percentage(8),
-                            Constraint::Percentage(8),
-                            Constraint::Percentage(8),
-                        ])
-                        .split(task_width_33[0]);
-
-                    let add_task_chunks_mid = Layout::default()
-                        .direction(Direction::Vertical)
-                        .margin(2)
-                        .constraints([
-                            Constraint::Percentage(8),
-                            Constraint::Percentage(8),
-                            Constraint::Percentage(8),
-                            Constraint::Percentage(8),
-                            Constraint::Percentage(8),
-                            Constraint::Percentage(8),
-                        ])
-                        .split(task_width_33[1]);
-
-                    rect.set_cursor(desc_width[0].x + 1 + 6, desc_width[0].y + 1);
-                    let (outer, name, desc, prio, label, due) = ui::render_add_tasks(&highlight);
-                    let name_paragraph = Paragraph::new("Buy milk")
-                        .style(Style::default().fg(Color::White))
-                        .block(name);
                     rect.render_stateful_widget(left, project_chunks[0], &mut project_list_state);
-                    rect.render_widget(outer, project_chunks[1]);
-                    rect.render_widget(name_paragraph, desc_width[0]);
-                    rect.render_widget(desc, desc_width[1]);
-                    rect.render_widget(label, desc_width[2]);
-                    rect.render_widget(prio, add_task_chunks_left[3]);
-                    rect.render_widget(due, add_task_chunks_mid[3]);
                 }
-                MenuItem::AddProject => {}
+                _ => {}
+            }
+
+            match active_task_item {
+                _ if active_task_item != TaskItem::Empty => {
+                    //rect.set_cursor(
+                    //    project_chunks[1].x + desc_text.len() as u16 + 1,
+                    //    project_chunks[1].y + 1,
+                    //);
+                    render_task_item(
+                        rect,
+                        project_chunks.clone(),
+                        &highlight,
+                        name_text.to_string(),
+                        desc_text.to_string(),
+                        label_text.to_string(),
+                        prio_text.to_string(),
+                        due_text.to_string(),
+                    );
+                }
+                _ => {}
             }
         })?;
 
-        match rx.recv()? {
+        match rx.recv().unwrap() {
             Event::Input(event) => match event.code {
-                KeyCode::Char('q') => {
-                    disable_raw_mode()?;
-                    terminal.show_cursor()?;
-                    break;
+                KeyCode::Esc if active_menu_item == MenuItem::AddTask => {
+                    name_text.clear();
+                    desc_text.clear();
+                    highlight = AddTaskHighlight::default();
+                    active_menu_item = MenuItem::Projects;
+                    active_task_item = TaskItem::Empty;
                 }
+                KeyCode::Char(e) if active_menu_item == MenuItem::AddTask => match active_task_item
+                {
+                    TaskItem::Name => {
+                        name_text.push(e);
+                    }
+                    TaskItem::Desc => {
+                        desc_text.push(e);
+                    }
+                    TaskItem::Label => {
+                        label_text.push(e);
+                    }
+                    TaskItem::Prio => {
+                        prio_text.push(e);
+                    }
+                    TaskItem::Due => {
+                        due_text.push(e);
+                    }
+                    _ => {}
+                },
+                KeyCode::Backspace if active_menu_item == MenuItem::AddTask => {
+                    match active_task_item {
+                        TaskItem::Name => {
+                            name_text.pop();
+                        }
+                        TaskItem::Desc => {
+                            desc_text.pop();
+                        }
+                        TaskItem::Label => {}
+                        TaskItem::Prio => {}
+                        TaskItem::Due => {}
+                        _ => {}
+                    }
+                }
+                KeyCode::Tab if active_menu_item == MenuItem::AddTask => match active_task_item {
+                    TaskItem::Name => {
+                        active_task_item = TaskItem::Desc;
+                        highlight = AddTaskHighlight::default();
+                        highlight.desc = Color::LightRed;
+                    }
+                    TaskItem::Desc => {
+                        active_task_item = TaskItem::Label;
+                        highlight = AddTaskHighlight::default();
+                        highlight.label = Color::LightRed;
+                    }
+                    TaskItem::Label => {
+                        active_task_item = TaskItem::Prio;
+                        highlight = AddTaskHighlight::default();
+                        highlight.prio = Color::LightRed;
+                    }
+                    TaskItem::Prio => {
+                        active_task_item = TaskItem::Due;
+                        highlight = AddTaskHighlight::default();
+                        highlight.due = Color::LightRed;
+                    }
+                    TaskItem::Due => {
+                        active_task_item = TaskItem::Name;
+                        highlight = AddTaskHighlight::default();
+                        highlight.name = Color::LightRed;
+                    }
+                    _ => {}
+                },
+                KeyCode::BackTab if active_menu_item == MenuItem::AddTask => match active_task_item
+                {
+                    TaskItem::Name => {
+                        active_task_item = TaskItem::Due;
+                        highlight = AddTaskHighlight::default();
+                        highlight.due = Color::LightRed;
+                    }
+                    TaskItem::Desc => {
+                        active_task_item = TaskItem::Name;
+                        highlight = AddTaskHighlight::default();
+                        highlight.name = Color::LightRed;
+                    }
+                    TaskItem::Label => {
+                        active_task_item = TaskItem::Desc;
+                        highlight = AddTaskHighlight::default();
+                        highlight.desc = Color::LightRed;
+                    }
+                    TaskItem::Prio => {
+                        active_task_item = TaskItem::Label;
+                        highlight = AddTaskHighlight::default();
+                        highlight.label = Color::LightRed;
+                    }
+                    TaskItem::Due => {
+                        active_task_item = TaskItem::Prio;
+                        highlight = AddTaskHighlight::default();
+                        highlight.prio = Color::LightRed;
+                    }
+                    _ => {}
+                },
+                KeyCode::Char('q') => break,
                 KeyCode::Char('h') => match active_menu_item {
                     MenuItem::Home => active_menu_item = MenuItem::Projects,
                     MenuItem::Projects => {
@@ -315,7 +395,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         projects2.lock().unwrap().push(Project::name("PogU"));
                         let projects2 = Arc::clone(&projects);
                         tokio::spawn(async move {
-                            post_projects("PogU".to_string()).await;
+                            let _ = post_projects("PogU".to_string()).await;
                             *projects2.lock().unwrap() = get_projects().await.unwrap();
                         });
                     }
@@ -324,26 +404,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 KeyCode::Char('a') => match active_menu_item {
                     MenuItem::Projects | MenuItem::Tasks => {
                         if let Some(selected) = project_list_state.selected() {
-                            //active_menu_item = MenuItem::AddTask;
-                            //highlight.name = Color::LightRed;
-                            //let mut active_add_task_item = AddTaskItem::Name;
-                            let tasks2 = Arc::clone(&tasks);
-                            let projects2 = Arc::clone(&projects);
-                            let current_selected_project = &projects2.lock().unwrap()[selected].id;
-                            tasks.lock().unwrap().push(Task::new(
-                                "TestTask".to_string(),
-                                current_selected_project.to_string(),
-                            ));
-                            let map = get_map(current_selected_project.to_string());
-                            let tasks4 = Arc::clone(&tasks);
-                            tokio::spawn(async move {
-                                post_task(map).await;
-                                *tasks2.lock().unwrap() = get_tasks().await.unwrap();
-                                tasks4
-                                    .lock()
-                                    .unwrap()
-                                    .sort_by(|a, b| a.project_id.cmp(&b.project_id));
-                            });
+                            active_menu_item = MenuItem::AddTask;
+                            active_task_item = TaskItem::Name;
+                            highlight.name = Color::LightRed;
+                            //let tasks2 = Arc::clone(&tasks);
+                            //let projects2 = Arc::clone(&projects);
+                            //let current_selected_project = &projects2.lock().unwrap()[selected].id;
+                            //tasks.lock().unwrap().push(Task::new(
+                            //    "TestTask".to_string(),
+                            //    current_selected_project.to_string(),
+                            //));
+                            //let map = get_map(current_selected_project.to_string());
+                            //let tasks4 = Arc::clone(&tasks);
+                            //tokio::spawn(async move {
+                            //    let _ = post_task(map).await;
+                            //    *tasks2.lock().unwrap() = get_tasks().await.unwrap();
+                            //    tasks4
+                            //        .lock()
+                            //        .unwrap()
+                            //        .sort_by(|a, b| a.project_id.cmp(&b.project_id));
+                            //});
                         }
                     }
                     _ => {}
@@ -371,7 +451,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let tasks3 = Arc::clone(&tasks);
                                 tokio::spawn(async move {
                                     tasks3.lock().unwrap().remove(selected + task_count);
-                                    delete_task(task_at_select.to_string()).await;
+                                    let _ = delete_task(task_at_select.to_string()).await;
                                     *tasks3.lock().unwrap() = get_tasks().await.unwrap();
                                     tasks3
                                         .lock()
@@ -512,19 +592,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Event::Tick => {}
         }
     }
-
     Ok(())
-}
-
-pub fn get_map(current_selected_project: String) -> Arc<Mutex<HashMap<String, String>>> {
-    let mut_map: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
-    let map2 = Arc::clone(&mut_map);
-    map2.lock()
-        .unwrap()
-        .insert("project_id".to_owned(), current_selected_project);
-    let map = Arc::clone(&mut_map);
-    map.lock()
-        .unwrap()
-        .insert("content".to_owned(), "TestTask".to_owned());
-    return mut_map;
 }

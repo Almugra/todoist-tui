@@ -1,11 +1,11 @@
-use std::sync::Mutex;
-
 use tui::{
-    layout::{Alignment, Constraint},
+    backend::Backend,
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     symbols,
     text::{Span, Spans},
-    widgets::{Block, BorderType, Borders, Paragraph, Row, Table, TableState, Tabs},
+    widgets::{Block, BorderType, Borders, Paragraph, Row, Table, TableState, Tabs, Widget},
+    Frame,
 };
 
 use crate::{
@@ -119,14 +119,14 @@ pub fn render_add_tasks<'a>(
         .style(Style::default().fg(highlight.desc))
         .border_type(BorderType::Plain);
 
-    let prio = Block::default()
-        .title("Priority")
+    let label = Block::default()
+        .title("Labels")
         .borders(Borders::ALL)
-        .style(Style::default().fg(highlight.prio))
+        .style(Style::default().fg(highlight.label))
         .border_type(BorderType::Plain);
 
-    let label = Block::default()
-        .title("Labers")
+    let prio = Block::default()
+        .title("Priority")
         .borders(Borders::ALL)
         .style(Style::default().fg(highlight.prio))
         .border_type(BorderType::Plain);
@@ -134,7 +134,7 @@ pub fn render_add_tasks<'a>(
     let due = Block::default()
         .title("Due date")
         .borders(Borders::ALL)
-        .style(Style::default().fg(highlight.prio))
+        .style(Style::default().fg(highlight.due))
         .border_type(BorderType::Plain);
 
     (outer, name, desc, prio, label, due)
@@ -233,4 +233,96 @@ pub fn render_projects<'a>(
         ]);
 
     (project_list, task_list)
+}
+
+pub fn render_task_item<'a, B: Backend>(
+    rect: &mut Frame<B>,
+    project_chunks: Vec<Rect>,
+    highlight: &AddTaskHighlight,
+    name_text: String,
+    desc_text: String,
+    label_text: String,
+    prio_text: String,
+    due_text: String,
+) -> () {
+    let task_width_33 = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(
+            [
+                Constraint::Percentage(33),
+                Constraint::Percentage(33),
+                Constraint::Percentage(33),
+            ]
+            .as_ref(),
+        )
+        .split(project_chunks[1]);
+
+    let task_width_full = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(100)].as_ref())
+        .split(project_chunks[1]);
+
+    let add_task_chunks_left = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints([
+            Constraint::Percentage(8),
+            Constraint::Percentage(8),
+            Constraint::Percentage(8),
+            Constraint::Percentage(8),
+            Constraint::Percentage(8),
+            Constraint::Percentage(8),
+        ])
+        .split(task_width_33[0]);
+
+    let add_task_chunks_mid = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints([
+            Constraint::Percentage(8),
+            Constraint::Percentage(8),
+            Constraint::Percentage(8),
+            Constraint::Percentage(8),
+            Constraint::Percentage(8),
+            Constraint::Percentage(8),
+        ])
+        .split(task_width_33[1]);
+
+    let desc_width = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints([
+            Constraint::Percentage(8),
+            Constraint::Percentage(8),
+            Constraint::Percentage(8),
+            Constraint::Percentage(8),
+            Constraint::Percentage(8),
+            Constraint::Percentage(8),
+            Constraint::Percentage(8),
+            Constraint::Percentage(8),
+        ])
+        .split(task_width_full[0]);
+
+    let (outer, name, desc, prio, label, due) = render_add_tasks(&highlight);
+    let name = Paragraph::new(name_text.as_ref())
+        .style(Style::default().fg(Color::White))
+        .block(name);
+    let desc = Paragraph::new(desc_text.as_ref())
+        .style(Style::default().fg(Color::White))
+        .block(desc);
+    let label = Paragraph::new(label_text.as_ref())
+        .style(Style::default().fg(Color::White))
+        .block(label);
+    let prio = Paragraph::new(prio_text.as_ref())
+        .style(Style::default().fg(Color::White))
+        .block(prio);
+    let due = Paragraph::new(due_text.as_ref())
+        .style(Style::default().fg(Color::White))
+        .block(due);
+    rect.render_widget(outer, project_chunks[1]);
+    rect.render_widget(name, desc_width[0]);
+    rect.render_widget(desc, desc_width[1]);
+    rect.render_widget(label, desc_width[2]);
+    rect.render_widget(prio, add_task_chunks_left[3]);
+    rect.render_widget(due, add_task_chunks_mid[3]);
 }

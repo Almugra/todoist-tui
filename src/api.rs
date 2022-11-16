@@ -51,6 +51,25 @@ pub struct Due {
 }
 
 #[derive(Deserialize, Debug, Serialize, Clone)]
+pub struct TaskContent {
+    pub content: String,
+    pub description: String,
+    pub due: Option<Due>,
+    pub labels: Vec<String>,
+}
+
+impl Default for TaskContent {
+    fn default() -> Self {
+        Self {
+            content: Default::default(),
+            description: Default::default(),
+            due: Default::default(),
+            labels: Default::default(),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug, Serialize, Clone)]
 pub struct Task {
     pub creator_id: String,
     pub created_at: String,
