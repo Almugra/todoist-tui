@@ -3,7 +3,8 @@ use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event as CEvent, KeyCode},
     execute,
     terminal::{
-        self, disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+        disable_raw_mode, enable_raw_mode, size, EnterAlternateScreen, LeaveAlternateScreen,
+        SetSize,
     },
 };
 use std::thread;
@@ -93,6 +94,7 @@ impl From<MenuItem> for usize {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let (cols, rows) = size()?;
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
@@ -106,7 +108,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
-        DisableMouseCapture
+        DisableMouseCapture,
+        SetSize(cols, rows)
     )?;
     terminal.show_cursor()?;
 
@@ -354,7 +357,10 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                         TaskItem::Label => task_content.labels.push(e),
                         TaskItem::Prio => {
                             task_content.priority.push(e);
-                            if task_content.priority.len() > 1 {}
+                            match task_content.priority.parse::<usize>() {
+                                Ok(x) if x <= 4 && x >= 1 => {}
+                                _ => task_content.priority.clear(),
+                            };
                         }
                         TaskItem::Due => task_content.due_string.push(e),
                         _ => {}
@@ -382,8 +388,8 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                     };
                 }
                 KeyCode::Enter if active_menu_item == MenuItem::AddTask => {
-                    let tasks2 = Arc::clone(&tasks);
                     let projects2 = Arc::clone(&projects);
+                    let tasks2 = Arc::clone(&tasks);
                     let current_selected_project =
                         &projects2.lock().unwrap()[project_list_state.selected().unwrap()].id;
                     let temp_task =
@@ -510,7 +516,7 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                     _ => {}
                 },
                 KeyCode::Char('p') => match active_menu_item {
-                    MenuItem::Projects => {
+                    MenuItem::Projects | MenuItem::Tasks => {
                         active_project_item = ProjectItem::Name;
                         active_menu_item = MenuItem::AddProject;
                     }
@@ -555,13 +561,13 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                                         .sort_by(|a, b| a.project_id.cmp(&b.project_id));
                                 });
 
-                                let mut counter = 0;
+                                let mut task_count = 0;
                                 (0..tasks2.len()).for_each(|i| {
                                     if projects2[selected_project].id == tasks2[i].project_id {
-                                        counter += 1;
+                                        task_count += 1;
                                     }
                                 });
-                                if selected == 0 && counter == 1 {
+                                if selected == 0 && task_count == 1 {
                                     active_menu_item = MenuItem::Projects;
                                     task_list_state.select(Some(0));
                                 } else if selected > 0 {

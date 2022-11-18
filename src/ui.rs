@@ -4,13 +4,13 @@ use tui::{
     style::{Color, Modifier, Style},
     symbols,
     text::{Span, Spans},
-    widgets::{Block, BorderType, Borders, Paragraph, Row, Table, TableState, Tabs},
+    widgets::{Block, BorderType, Borders, Cell, Paragraph, Row, Table, TableState, Tabs},
     Frame,
 };
 
 use crate::{
     api::{PostProject, Project, Task, TaskContent},
-    AddTaskHighlight, MenuItem, TaskItem,
+    AddTaskHighlight, MenuItem,
 };
 
 pub fn render_menu_tabs(active_menu_item: MenuItem) -> Tabs<'static> {
@@ -191,15 +191,46 @@ pub fn render_projects<'a>(
         .iter()
         .filter(|task| task.project_id == selected_project.id)
         .map(|task| {
-            Row::new(vec![
-                "".to_owned(),
-                task.priority.to_string(),
-                task.content.to_string(),
-                task.description.to_string(),
-                task.labels.join(", "),
-            ])
+            let datetime: String = match &task.due {
+                Some(due) => match &due.datetime {
+                    Some(datetime) => datetime.replace("T", " "),
+                    None => String::new(),
+                },
+                None => String::new(),
+            };
+            let mut height = 2;
+            let mut height_mut = |x: String| {
+                if !x.is_empty() {
+                    height += 1;
+                }
+            };
+            height_mut(task.description.clone());
+            height_mut(task.labels.join("").clone());
+            height_mut(datetime.clone());
+
+            let style = Style::default()
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                .fg(Color::LightRed);
+            let empty = Cell::from("");
+            let row = Cell::from(vec![
+                Spans::from(Span::styled(task.content.clone(), style)),
+                Spans::from(task.description.clone()),
+                Spans::from(task.labels.join(", ")),
+                Spans::from(datetime),
+            ]);
+            Row::new(vec![empty, row]).height(height)
         })
         .collect();
+
+    let task_list = Table::new(task_rows)
+        .block(task_block)
+        .highlight_style(
+            Style::default()
+                .fg(Color::Rgb(255, 172, 172))
+                .add_modifier(Modifier::BOLD),
+        )
+        .column_spacing(1)
+        .widths(&[Constraint::Max(2), Constraint::Percentage(100)]);
 
     let project_list = Table::new(project_items)
         .block(projects_block)
@@ -211,31 +242,6 @@ pub fn render_projects<'a>(
         )
         .column_spacing(1)
         .widths(&[Constraint::Length(35), Constraint::Length(5)]);
-
-    let task_list = Table::new(task_rows)
-        .block(task_block)
-        .header(
-            Row::new(vec!["", "Prio", "Name", "Description", "Labels"]).style(
-                Style::default()
-                    .add_modifier(Modifier::BOLD)
-                    .fg(Color::LightRed),
-            ),
-        )
-        .highlight_style(
-            Style::default()
-                .fg(Color::Black)
-                .bg(Color::LightRed)
-                .add_modifier(Modifier::BOLD),
-        )
-        .column_spacing(1)
-        .widths(&[
-            Constraint::Length(1),
-            Constraint::Length(5),
-            Constraint::Length(25),
-            Constraint::Length(25),
-            Constraint::Length(25),
-            Constraint::Length(60),
-        ]);
 
     (project_list, task_list)
 }

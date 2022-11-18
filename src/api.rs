@@ -41,6 +41,27 @@ impl Project {
 }
 
 #[derive(Deserialize, Debug, Serialize, Clone)]
+pub struct Due {
+    pub date: Option<String>,
+    pub is_recurring: Option<bool>,
+    pub datetime: Option<String>,
+    pub timezone: Option<String>,
+    pub string: Option<String>,
+}
+
+impl Default for Due {
+    fn default() -> Self {
+        Self {
+            date: Default::default(),
+            is_recurring: Default::default(),
+            datetime: Default::default(),
+            timezone: Default::default(),
+            string: Default::default(),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug, Serialize, Clone)]
 pub struct Task {
     pub creator_id: String,
     pub created_at: String,
@@ -51,6 +72,7 @@ pub struct Task {
     pub content: String,
     pub description: String,
     pub id: String,
+    pub due: Option<Due>,
     pub labels: Vec<String>,
     pub order: usize,
     pub priority: usize,
@@ -59,10 +81,6 @@ pub struct Task {
     pub parent_id: Option<String>,
     pub due_string: Option<String>,
     pub url: String,
-    pub date: Option<String>,
-    pub is_recurring: Option<bool>,
-    pub datetime: Option<String>,
-    pub timezone: Option<String>,
 }
 
 impl Task {
@@ -73,6 +91,9 @@ impl Task {
             .split(',')
             .map(|s| s.to_owned())
             .collect();
+
+        let mut due = Due::default();
+        due.datetime = Some(task_content.due_string.to_owned());
 
         Task {
             creator_id: String::new(),
@@ -85,6 +106,7 @@ impl Task {
             description: task_content.description,
             id: String::new(),
             labels,
+            due: Some(due),
             order: 0,
             priority: task_content.priority.parse::<usize>().unwrap(),
             project_id: project_id.to_string(),
@@ -92,10 +114,6 @@ impl Task {
             parent_id: None,
             due_string: Some(task_content.due_string),
             url: String::new(),
-            date: None,
-            is_recurring: None,
-            datetime: None,
-            timezone: None,
         }
     }
 }
