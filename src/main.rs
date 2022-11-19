@@ -22,7 +22,10 @@ use tui::{
     widgets::ListItem,
     Terminal,
 };
-use ui::{render_key_tabs, render_menu_tabs, render_project_item, render_task_item};
+use ui::{
+    render_home, render_key_tabs, render_menu_tabs, render_project_item, render_projects,
+    render_task_item,
+};
 pub mod api;
 pub mod config;
 pub mod ui;
@@ -94,10 +97,13 @@ impl From<MenuItem> for usize {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let (cols, rows) = size()?;
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableMouseCapture
+    )?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
@@ -109,7 +115,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         terminal.backend_mut(),
         LeaveAlternateScreen,
         DisableMouseCapture,
-        SetSize(cols, rows)
     )?;
     terminal.show_cursor()?;
 
@@ -181,6 +186,11 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                 .constraints([Constraint::Length(3), Constraint::Min(2)].as_ref())
                 .split(size);
 
+            let bottom_fullscreen = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(100), Constraint::Percentage(40)])
+                .split(top_bottom_fullscreen[1]);
+
             let project_add_chunk = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(2)
@@ -200,24 +210,26 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                 )
                 .split(size);
 
+            let constraints = [Constraint::Percentage(15), Constraint::Percentage(85)];
+
             let left_right_top = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(20), Constraint::Percentage(80)].as_ref())
+                .constraints(constraints)
                 .split(top_bottom_fullscreen[0]);
 
             let left_right_bottom = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(20), Constraint::Percentage(80)].as_ref())
+                .constraints(constraints)
                 .split(top_bottom_fullscreen[1]);
 
             let project_chunks_2 = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(20), Constraint::Percentage(80)].as_ref())
+                .constraints(constraints)
                 .split(project_add_chunk[1]);
 
             let project_chunks_add = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(20), Constraint::Percentage(80)].as_ref())
+                .constraints(constraints)
                 .split(project_add_chunk2[1]);
 
             let menu_tabs = render_menu_tabs(active_menu_item);
@@ -226,9 +238,9 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
             rect.render_widget(key_tabs, left_right_top[1]);
 
             match active_menu_item {
-                MenuItem::Home => rect.render_widget(ui::render_home(), top_bottom_fullscreen[1]),
+                MenuItem::Home => rect.render_widget(render_home(), bottom_fullscreen[0]),
                 MenuItem::Projects => {
-                    let (left, right) = ui::render_projects(
+                    let (left, right) = render_projects(
                         &project_list_state,
                         projects.lock().unwrap().clone(),
                         &mut tasks.lock().unwrap().clone(),
@@ -241,7 +253,7 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                     rect.render_widget(right, left_right_bottom[1]);
                 }
                 MenuItem::Tasks => {
-                    let (left, right) = ui::render_projects(
+                    let (left, right) = render_projects(
                         &project_list_state,
                         projects.lock().unwrap().clone(),
                         &mut tasks.lock().unwrap().clone(),
@@ -254,7 +266,7 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                     rect.render_stateful_widget(right, left_right_bottom[1], &mut task_list_state);
                 }
                 MenuItem::AddTask => {
-                    let (left, _) = ui::render_projects(
+                    let (left, _) = render_projects(
                         &project_list_state,
                         projects.lock().unwrap().clone(),
                         &mut tasks.lock().unwrap().clone(),
@@ -266,7 +278,7 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                     );
                 }
                 MenuItem::AddProject => {
-                    let (left, right) = ui::render_projects(
+                    let (left, right) = render_projects(
                         &project_list_state,
                         projects.lock().unwrap().clone(),
                         &mut tasks.lock().unwrap().clone(),
@@ -288,13 +300,14 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                 _ if active_task_item != TaskItem::Empty => {
                     let mut x = left_right_bottom[1].x + 3;
                     let mut y = left_right_bottom[1].y;
+                    let constraints = [
+                        Constraint::Percentage(33),
+                        Constraint::Percentage(33),
+                        Constraint::Percentage(33),
+                    ];
                     let task_width_33 = Layout::default()
                         .direction(Direction::Horizontal)
-                        .constraints([
-                            Constraint::Percentage(33),
-                            Constraint::Percentage(33),
-                            Constraint::Percentage(33),
-                        ])
+                        .constraints(constraints)
                         .split(left_right_bottom[1]);
                     match active_task_item {
                         TaskItem::Name => {
@@ -338,149 +351,81 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                     if active_menu_item == MenuItem::AddTask
                         || active_menu_item == MenuItem::AddProject =>
                 {
-                    active_menu_item = MenuItem::Projects;
-
-                    task_content = TaskContent::default();
-                    highlight = AddTaskHighlight::default();
-                    active_task_item = TaskItem::Empty;
-
-                    project_item = PostProject::default();
-                    active_project_item = ProjectItem::Empty;
+                    cleanup(
+                        &mut active_menu_item,
+                        &mut task_content,
+                        &mut highlight,
+                        &mut active_task_item,
+                        &mut project_item,
+                        &mut active_project_item,
+                    )
                 }
                 KeyCode::Char(e)
                     if active_menu_item == MenuItem::AddTask
                         || active_menu_item == MenuItem::AddProject =>
                 {
-                    match active_task_item {
-                        TaskItem::Name => task_content.content.push(e),
-                        TaskItem::Desc => task_content.description.push(e),
-                        TaskItem::Label => task_content.labels.push(e),
-                        TaskItem::Prio => {
-                            task_content.priority.push(e);
-                            match task_content.priority.parse::<usize>() {
-                                Ok(x) if x <= 4 && x >= 1 => {}
-                                _ => task_content.priority.clear(),
-                            };
-                        }
-                        TaskItem::Due => task_content.due_string.push(e),
-                        _ => {}
-                    }
-                    match active_project_item {
-                        ProjectItem::Name => project_item.name.push(e),
-                        ProjectItem::Empty => {}
-                    };
+                    push_char_to_field(
+                        e,
+                        &active_task_item,
+                        &mut task_content,
+                        &active_project_item,
+                        &mut project_item,
+                    )
                 }
                 KeyCode::Backspace
                     if active_menu_item == MenuItem::AddTask
                         || active_menu_item == MenuItem::AddProject =>
                 {
-                    match active_task_item {
-                        TaskItem::Name => task_content.content.pop(),
-                        TaskItem::Desc => task_content.description.pop(),
-                        TaskItem::Label => task_content.labels.pop(),
-                        TaskItem::Prio => task_content.priority.pop(),
-                        TaskItem::Due => task_content.due_string.pop(),
-                        _ => None,
-                    };
-                    match active_project_item {
-                        ProjectItem::Name => project_item.name.pop(),
-                        ProjectItem::Empty => None,
-                    };
+                    remove_char_from_field(
+                        &active_task_item,
+                        &mut task_content,
+                        &active_project_item,
+                        &mut project_item,
+                    )
                 }
                 KeyCode::Enter if active_menu_item == MenuItem::AddTask => {
-                    let projects2 = Arc::clone(&projects);
-                    let tasks2 = Arc::clone(&tasks);
-                    let current_selected_project =
-                        &projects2.lock().unwrap()[project_list_state.selected().unwrap()].id;
-                    let temp_task =
-                        Task::temp(task_content.clone(), current_selected_project.to_string());
-                    let temp_task2 =
-                        Task::temp(task_content.clone(), current_selected_project.to_string());
-                    tasks.lock().unwrap().push(temp_task.clone());
-                    let tasks4 = Arc::clone(&tasks);
-                    tokio::spawn(async move {
-                        let _ = post_task(temp_task2).await;
-                        *tasks2.lock().unwrap() = get_tasks().await.unwrap();
-                        tasks4
-                            .lock()
-                            .unwrap()
-                            .sort_by(|a, b| a.project_id.cmp(&b.project_id));
-                    });
-                    task_content = TaskContent::default();
-                    highlight = AddTaskHighlight::default();
-                    active_menu_item = MenuItem::Projects;
-                    active_task_item = TaskItem::Empty;
+                    if let Some(selected) = project_list_state.selected() {
+                        let projects = Arc::clone(&projects);
+                        let tasks = Arc::clone(&tasks);
+                        let current_selected_project = &projects.lock().unwrap()[selected].id;
+                        let temp_task =
+                            Task::temp(task_content.clone(), current_selected_project.to_string());
+                        tasks.lock().unwrap().push(temp_task.clone());
+                        tokio::spawn(async move {
+                            let _ = post_task(temp_task).await;
+                            *tasks.lock().unwrap() = get_tasks().await.unwrap();
+                            tasks
+                                .lock()
+                                .unwrap()
+                                .sort_by(|a, b| a.project_id.cmp(&b.project_id));
+                        });
+                        task_content = TaskContent::default();
+                        highlight = AddTaskHighlight::default();
+                        active_menu_item = MenuItem::Projects;
+                        active_task_item = TaskItem::Empty;
+                    }
                 }
                 KeyCode::Enter if active_menu_item == MenuItem::AddProject => {
-                    let projects2 = Arc::clone(&projects);
+                    let projects = Arc::clone(&projects);
                     let temp_project = Project::name(&project_item.name);
-                    projects2.lock().unwrap().push(temp_project.clone());
-                    let projects2 = Arc::clone(&projects);
+                    projects.lock().unwrap().push(temp_project.clone());
                     tokio::spawn(async move {
                         let _ = post_projects(project_item).await;
-                        *projects2.lock().unwrap() = get_projects().await.unwrap();
+                        *projects.lock().unwrap() = get_projects().await.unwrap();
                     });
                     project_item = PostProject::default();
                     active_menu_item = MenuItem::Projects;
                     active_project_item = ProjectItem::Empty;
                 }
-                KeyCode::Tab if active_menu_item == MenuItem::AddTask => match active_task_item {
-                    TaskItem::Name => {
-                        active_task_item = TaskItem::Desc;
-                        highlight = AddTaskHighlight::default();
-                        highlight.desc = Color::LightRed;
-                    }
-                    TaskItem::Desc => {
-                        active_task_item = TaskItem::Label;
-                        highlight = AddTaskHighlight::default();
-                        highlight.label = Color::LightRed;
-                    }
-                    TaskItem::Label => {
-                        active_task_item = TaskItem::Prio;
-                        highlight = AddTaskHighlight::default();
-                        highlight.prio = Color::LightRed;
-                    }
-                    TaskItem::Prio => {
-                        active_task_item = TaskItem::Due;
-                        highlight = AddTaskHighlight::default();
-                        highlight.due = Color::LightRed;
-                    }
-                    TaskItem::Due => {
-                        active_task_item = TaskItem::Name;
-                        highlight = AddTaskHighlight::default();
-                        highlight.name = Color::LightRed;
-                    }
-                    _ => {}
-                },
-                KeyCode::BackTab if active_menu_item == MenuItem::AddTask => match active_task_item
-                {
-                    TaskItem::Name => {
-                        active_task_item = TaskItem::Due;
-                        highlight = AddTaskHighlight::default();
-                        highlight.due = Color::LightRed;
-                    }
-                    TaskItem::Desc => {
-                        active_task_item = TaskItem::Name;
-                        highlight = AddTaskHighlight::default();
-                        highlight.name = Color::LightRed;
-                    }
-                    TaskItem::Label => {
-                        active_task_item = TaskItem::Desc;
-                        highlight = AddTaskHighlight::default();
-                        highlight.desc = Color::LightRed;
-                    }
-                    TaskItem::Prio => {
-                        active_task_item = TaskItem::Label;
-                        highlight = AddTaskHighlight::default();
-                        highlight.label = Color::LightRed;
-                    }
-                    TaskItem::Due => {
-                        active_task_item = TaskItem::Prio;
-                        highlight = AddTaskHighlight::default();
-                        highlight.prio = Color::LightRed;
-                    }
-                    _ => {}
-                },
+                KeyCode::Tab if active_menu_item == MenuItem::AddTask => {
+                    change_active_add_task_input_field(&mut highlight, &mut active_task_item);
+                }
+                KeyCode::BackTab if active_menu_item == MenuItem::AddTask => {
+                    change_active_add_task_input_field(&mut highlight, &mut active_task_item);
+                    change_active_add_task_input_field(&mut highlight, &mut active_task_item);
+                    change_active_add_task_input_field(&mut highlight, &mut active_task_item);
+                    change_active_add_task_input_field(&mut highlight, &mut active_task_item);
+                }
                 KeyCode::Char('q') => break,
                 KeyCode::Char('h') => match active_menu_item {
                     MenuItem::Home => active_menu_item = MenuItem::Projects,
@@ -515,21 +460,19 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                     }
                     _ => {}
                 },
-                KeyCode::Char('p') => match active_menu_item {
-                    MenuItem::Projects | MenuItem::Tasks => {
+                KeyCode::Char('p') => {
+                    if let MenuItem::Projects | MenuItem::Tasks = active_menu_item {
                         active_project_item = ProjectItem::Name;
                         active_menu_item = MenuItem::AddProject;
                     }
-                    _ => {}
-                },
-                KeyCode::Char('a') => match active_menu_item {
-                    MenuItem::Projects | MenuItem::Tasks => {
+                }
+                KeyCode::Char('a') => {
+                    if let MenuItem::Projects | MenuItem::Tasks = active_menu_item {
                         active_menu_item = MenuItem::AddTask;
                         active_task_item = TaskItem::Name;
                         highlight.name = Color::LightRed;
                     }
-                    _ => {}
-                },
+                }
                 KeyCode::Char('d') => match active_menu_item {
                     MenuItem::Tasks => {
                         if let Some(selected) = task_list_state.selected() {
@@ -595,98 +538,27 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                 },
                 KeyCode::Char('j') => match active_menu_item {
                     MenuItem::Projects => {
-                        if let Some(selected) = project_list_state.selected() {
-                            let project_amount = projects.lock().unwrap().len();
-                            if selected >= project_amount - 1 {
-                                project_list_state.select(Some(0));
-                            } else {
-                                project_list_state.select(Some(selected + 1));
-                            }
-                        }
+                        navigate_down_projects(&mut project_list_state, Arc::clone(&projects));
                     }
-                    MenuItem::Tasks => {
-                        if let Some(selected) = task_list_state.selected() {
-                            let selected_project = projects
-                                .lock()
-                                .unwrap()
-                                .clone()
-                                .get(
-                                    project_list_state
-                                        .selected()
-                                        .expect("there is always a selected project"),
-                                )
-                                .expect("exists")
-                                .clone();
+                    MenuItem::Tasks => navigate_down_tasks(
+                        Arc::clone(&tasks),
+                        Arc::clone(&projects),
+                        &mut task_list_state,
+                        &project_list_state,
+                    ),
 
-                            let task_items: Vec<_> = tasks
-                                .lock()
-                                .unwrap()
-                                .clone()
-                                .iter()
-                                .filter(|task| task.project_id == selected_project.id)
-                                .map(|task| {
-                                    ListItem::new(Spans::from(vec![Span::styled(
-                                        task.content.clone(),
-                                        Style::default(),
-                                    )]))
-                                })
-                                .collect();
-                            let amount_tasks = task_items.len();
-                            if selected >= amount_tasks - 1 {
-                                task_list_state.select(Some(0));
-                            } else {
-                                task_list_state.select(Some(selected + 1));
-                            }
-                        }
-                    }
                     _ => {}
                 },
                 KeyCode::Char('k') => match active_menu_item {
                     MenuItem::Projects => {
-                        if let Some(selected) = project_list_state.selected() {
-                            let project_amount = projects.lock().unwrap().len();
-                            if selected > 0 {
-                                project_list_state.select(Some(selected - 1));
-                            } else {
-                                project_list_state.select(Some(project_amount - 1));
-                            }
-                        }
+                        navigate_up_projects(&mut project_list_state, Arc::clone(&projects));
                     }
-                    MenuItem::Tasks => {
-                        if let Some(selected) = task_list_state.selected() {
-                            let selected_project = projects
-                                .lock()
-                                .unwrap()
-                                .clone()
-                                .get(
-                                    project_list_state
-                                        .selected()
-                                        .expect("there is always a selected project"),
-                                )
-                                .expect("exists")
-                                .clone();
-
-                            let task_items: Vec<_> = tasks
-                                .lock()
-                                .unwrap()
-                                .clone()
-                                .iter()
-                                .filter(|task| task.project_id == selected_project.id)
-                                .map(|task| {
-                                    ListItem::new(Spans::from(vec![Span::styled(
-                                        task.content.clone(),
-                                        Style::default(),
-                                    )]))
-                                })
-                                .collect();
-                            let amount_tasks = task_items.len();
-                            if selected > 0 {
-                                task_list_state.select(Some(selected - 1));
-                            } else {
-                                task_list_state.select(Some(amount_tasks - 1));
-                            }
-                        }
-                    }
+                    MenuItem::Tasks => navigate_up_tasks(
+                        Arc::clone(&tasks),
+                        Arc::clone(&projects),
+                        &mut task_list_state,
+                        &project_list_state,
+                    ),
                     _ => {}
                 },
                 _ => {}
@@ -695,4 +567,211 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+pub fn push_char_to_field(
+    e: char,
+    active_task_item: &TaskItem,
+    task_content: &mut TaskContent,
+    active_project_item: &ProjectItem,
+    project_item: &mut PostProject,
+) {
+    match active_task_item {
+        TaskItem::Name => task_content.content.push(e),
+        TaskItem::Desc => task_content.description.push(e),
+        TaskItem::Label => task_content.labels.push(e),
+        TaskItem::Prio => {
+            task_content.priority.push(e);
+            match task_content.priority.parse::<usize>() {
+                Ok(x) if x <= 4 && x >= 1 => {}
+                _ => task_content.priority.clear(),
+            };
+        }
+        TaskItem::Due => task_content.due_string.push(e),
+        _ => {}
+    }
+    match active_project_item {
+        ProjectItem::Name => project_item.name.push(e),
+        ProjectItem::Empty => {}
+    };
+}
+
+pub fn remove_char_from_field(
+    active_task_item: &TaskItem,
+    task_content: &mut TaskContent,
+    active_project_item: &ProjectItem,
+    project_item: &mut PostProject,
+) {
+    match active_task_item {
+        TaskItem::Name => task_content.content.pop(),
+        TaskItem::Desc => task_content.description.pop(),
+        TaskItem::Label => task_content.labels.pop(),
+        TaskItem::Prio => task_content.priority.pop(),
+        TaskItem::Due => task_content.due_string.pop(),
+        _ => None,
+    };
+    match active_project_item {
+        ProjectItem::Name => project_item.name.pop(),
+        ProjectItem::Empty => None,
+    };
+}
+
+pub fn cleanup(
+    active_menu_item: &mut MenuItem,
+    task_content: &mut TaskContent,
+    highlight: &mut AddTaskHighlight,
+    active_task_item: &mut TaskItem,
+    project_item: &mut PostProject,
+    active_project_item: &mut ProjectItem,
+) {
+    *active_menu_item = MenuItem::Projects;
+
+    *task_content = TaskContent::default();
+    *highlight = AddTaskHighlight::default();
+    *active_task_item = TaskItem::Empty;
+
+    *project_item = PostProject::default();
+    *active_project_item = ProjectItem::Empty;
+}
+
+pub fn change_active_add_task_input_field(
+    highlight: &mut AddTaskHighlight,
+    active_task_item: &mut TaskItem,
+) {
+    match active_task_item {
+        TaskItem::Name => {
+            *active_task_item = TaskItem::Desc;
+            *highlight = AddTaskHighlight::default();
+            highlight.desc = Color::LightRed;
+        }
+        TaskItem::Desc => {
+            *active_task_item = TaskItem::Label;
+            *highlight = AddTaskHighlight::default();
+            highlight.label = Color::LightRed;
+        }
+        TaskItem::Label => {
+            *active_task_item = TaskItem::Prio;
+            *highlight = AddTaskHighlight::default();
+            highlight.prio = Color::LightRed;
+        }
+        TaskItem::Prio => {
+            *active_task_item = TaskItem::Due;
+            *highlight = AddTaskHighlight::default();
+            highlight.due = Color::LightRed;
+        }
+        TaskItem::Due => {
+            *active_task_item = TaskItem::Name;
+            *highlight = AddTaskHighlight::default();
+            highlight.name = Color::LightRed;
+        }
+        _ => {}
+    }
+}
+
+pub fn navigate_down_tasks(
+    tasks: Arc<Mutex<Vec<Task>>>,
+    projects: Arc<Mutex<Vec<Project>>>,
+    task_list_state: &mut TableState,
+    project_list_state: &TableState,
+) {
+    if let Some(selected) = task_list_state.selected() {
+        let selected_project = projects
+            .lock()
+            .unwrap()
+            .clone()
+            .get(
+                project_list_state
+                    .selected()
+                    .expect("there is always a selected project"),
+            )
+            .expect("exists")
+            .clone();
+
+        let task_items: Vec<_> = tasks
+            .lock()
+            .unwrap()
+            .clone()
+            .iter()
+            .filter(|task| task.project_id == selected_project.id)
+            .map(|task| {
+                ListItem::new(Spans::from(vec![Span::styled(
+                    task.content.clone(),
+                    Style::default(),
+                )]))
+            })
+            .collect();
+        let amount_tasks = task_items.len();
+        if selected >= amount_tasks - 1 {
+            task_list_state.select(Some(0));
+        } else {
+            task_list_state.select(Some(selected + 1));
+        }
+    }
+}
+
+pub fn navigate_down_projects(
+    project_list_state: &mut TableState,
+    projects: Arc<Mutex<Vec<Project>>>,
+) {
+    if let Some(selected) = project_list_state.selected() {
+        let project_amount = projects.lock().unwrap().len();
+        if selected >= project_amount - 1 {
+            project_list_state.select(Some(0));
+        } else {
+            project_list_state.select(Some(selected + 1));
+        }
+    }
+}
+
+pub fn navigate_up_projects(
+    project_list_state: &mut TableState,
+    projects: Arc<Mutex<Vec<Project>>>,
+) {
+    if let Some(selected) = project_list_state.selected() {
+        let project_amount = projects.lock().unwrap().len();
+        if selected > 0 {
+            project_list_state.select(Some(selected - 1));
+        } else {
+            project_list_state.select(Some(project_amount - 1));
+        }
+    }
+}
+
+pub fn navigate_up_tasks(
+    tasks: Arc<Mutex<Vec<Task>>>,
+    projects: Arc<Mutex<Vec<Project>>>,
+    task_list_state: &mut TableState,
+    project_list_state: &TableState,
+) {
+    if let Some(selected) = task_list_state.selected() {
+        if let Some(selected_p) = project_list_state.selected() {
+            let selected_project = projects
+                .lock()
+                .unwrap()
+                .clone()
+                .get(selected_p)
+                .unwrap()
+                .clone();
+
+            let task_items: Vec<ListItem> = tasks
+                .lock()
+                .unwrap()
+                .clone()
+                .iter()
+                .filter(|task| task.project_id == selected_project.id)
+                .map(|task| {
+                    ListItem::new(Spans::from(vec![Span::styled(
+                        task.content.clone(),
+                        Style::default(),
+                    )]))
+                })
+                .collect();
+            let amount_tasks = task_items.len();
+            if selected > 0 {
+                task_list_state.select(Some(selected - 1));
+            } else {
+                task_list_state.select(Some(amount_tasks - 1));
+            }
+        }
+    }
 }

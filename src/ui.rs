@@ -226,10 +226,11 @@ pub fn render_projects<'a>(
         .block(task_block)
         .highlight_style(
             Style::default()
-                .fg(Color::Rgb(255, 172, 172))
+                //.fg(Color::Rgb(255, 172, 172))
                 .add_modifier(Modifier::BOLD),
         )
         .column_spacing(1)
+        .highlight_symbol(">")
         .widths(&[Constraint::Max(2), Constraint::Percentage(100)]);
 
     let project_list = Table::new(project_items)
