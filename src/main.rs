@@ -99,11 +99,7 @@ impl From<MenuItem> for usize {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(
-        stdout,
-        EnterAlternateScreen,
-        EnableMouseCapture
-    )?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
@@ -237,13 +233,17 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
             let key_tabs = render_key_tabs();
             rect.render_widget(key_tabs, left_right_top[1]);
 
+            let light_red = Color::LightRed;
+            let white = Color::White;
             match active_menu_item {
-                MenuItem::Home => rect.render_widget(render_home(), bottom_fullscreen[0]),
+                MenuItem::Home => rect.render_widget(render_home(white), bottom_fullscreen[0]),
                 MenuItem::Projects => {
                     let (left, right) = render_projects(
                         &project_list_state,
                         projects.lock().unwrap().clone(),
                         &mut tasks.lock().unwrap().clone(),
+                        light_red,
+                        white,
                     );
                     rect.render_stateful_widget(
                         left,
@@ -257,6 +257,8 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                         &project_list_state,
                         projects.lock().unwrap().clone(),
                         &mut tasks.lock().unwrap().clone(),
+                        white,
+                        light_red,
                     );
                     rect.render_stateful_widget(
                         left,
@@ -270,6 +272,8 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                         &project_list_state,
                         projects.lock().unwrap().clone(),
                         &mut tasks.lock().unwrap().clone(),
+                        white,
+                        white,
                     );
                     rect.render_stateful_widget(
                         left,
@@ -282,6 +286,8 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                         &project_list_state,
                         projects.lock().unwrap().clone(),
                         &mut tasks.lock().unwrap().clone(),
+                        white,
+                        white,
                     );
                     rect.set_cursor(
                         project_chunks_add[0].x + project_item.name.len() as u16 + 1,

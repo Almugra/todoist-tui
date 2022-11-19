@@ -71,7 +71,7 @@ pub fn render_key_tabs() -> Tabs<'static> {
     key_tabs
 }
 
-pub fn render_home<'a>() -> Paragraph<'a> {
+pub fn render_home<'a>(color: Color) -> Paragraph<'a> {
     let home = Paragraph::new(vec![
         Spans::from(vec![Span::raw("")]),
         Spans::from(vec![Span::raw("Welcome")]),
@@ -86,6 +86,7 @@ pub fn render_home<'a>() -> Paragraph<'a> {
             .borders(Borders::ALL)
             .style(Style::default().fg(Color::White))
             .title("Home")
+            .border_style(Style::default().fg(color))
             .border_type(BorderType::Plain),
     );
     home
@@ -144,18 +145,22 @@ pub fn render_projects<'a>(
     project_table_state: &TableState,
     project_list: Vec<Project>,
     task_list: &mut Vec<Task>,
+    color_left: Color,
+    color_right: Color,
 ) -> (Table<'a>, Table<'a>) {
     let projects_block = Block::default()
         .borders(Borders::ALL)
-        .style(Style::default().fg(Color::White))
         .title("Projects")
+        .style(Style::default().fg(Color::White))
         .title_alignment(Alignment::Center)
+        .border_style(Style::default().fg(color_left))
         .border_type(BorderType::Plain);
 
     let task_block = Block::default()
         .borders(Borders::ALL)
         .style(Style::default().fg(Color::White))
         .border_type(BorderType::Plain)
+        .border_style(Style::default().fg(color_right))
         .title("Tasks");
 
     pub fn get_task_from_project_id(project_id: String, task_list: &mut Vec<Task>) -> String {
