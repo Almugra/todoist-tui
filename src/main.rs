@@ -2,10 +2,7 @@ use api::{delete_task, get_tasks, post_projects, PostProject, Task, TaskContent}
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event as CEvent, KeyCode},
     execute,
-    terminal::{
-        disable_raw_mode, enable_raw_mode, size, EnterAlternateScreen, LeaveAlternateScreen,
-        SetSize,
-    },
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use std::thread;
 use std::{io, sync::mpsc, vec};
@@ -184,13 +181,19 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
 
             let bottom_fullscreen = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(100), Constraint::Percentage(40)])
+                .constraints([Constraint::Length(75), Constraint::Length(40)])
                 .split(top_bottom_fullscreen[1]);
 
             let project_add_chunk = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(2)
                 .constraints([Constraint::Length(6), Constraint::Min(50)].as_ref())
+                .split(size);
+
+            let task_add_chunk = Layout::default()
+                .direction(Direction::Vertical)
+                .margin(2)
+                .constraints([Constraint::Length(18), Constraint::Min(50)].as_ref())
                 .split(size);
 
             let project_add_chunk2 = Layout::default()
@@ -206,7 +209,11 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                 )
                 .split(size);
 
-            let constraints = [Constraint::Percentage(15), Constraint::Percentage(85)];
+            let constraints = [
+                Constraint::Length(30),
+                Constraint::Length(45),
+                Constraint::Length(10),
+            ];
 
             let left_right_top = Layout::default()
                 .direction(Direction::Horizontal)
@@ -228,6 +235,11 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                 .constraints(constraints)
                 .split(project_add_chunk2[1]);
 
+            let task_chunks_add = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(constraints)
+                .split(task_add_chunk[1]);
+
             let menu_tabs = render_menu_tabs(active_menu_item);
             rect.render_widget(menu_tabs, left_right_top[0]);
             let key_tabs = render_key_tabs();
@@ -236,7 +248,7 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
             let light_red = Color::LightRed;
             let white = Color::White;
             match active_menu_item {
-                MenuItem::Home => rect.render_widget(render_home(white), bottom_fullscreen[0]),
+                MenuItem::Home => rect.render_widget(render_home(), bottom_fullscreen[0]),
                 MenuItem::Projects => {
                     let (left, right) = render_projects(
                         &project_list_state,
@@ -268,7 +280,7 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                     rect.render_stateful_widget(right, left_right_bottom[1], &mut task_list_state);
                 }
                 MenuItem::AddTask => {
-                    let (left, _) = render_projects(
+                    let (left, right) = render_projects(
                         &project_list_state,
                         projects.lock().unwrap().clone(),
                         &mut tasks.lock().unwrap().clone(),
@@ -280,6 +292,7 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                         left_right_bottom[0],
                         &mut project_list_state,
                     );
+                    rect.render_widget(right, task_chunks_add[1]);
                 }
                 MenuItem::AddProject => {
                     let (left, right) = render_projects(
@@ -304,36 +317,26 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
 
             match active_task_item {
                 _ if active_task_item != TaskItem::Empty => {
-                    let mut x = left_right_bottom[1].x + 3;
-                    let mut y = left_right_bottom[1].y;
-                    let constraints = [
-                        Constraint::Percentage(33),
-                        Constraint::Percentage(33),
-                        Constraint::Percentage(33),
-                    ];
-                    let task_width_33 = Layout::default()
-                        .direction(Direction::Horizontal)
-                        .constraints(constraints)
-                        .split(left_right_bottom[1]);
+                    let mut x = left_right_bottom[1].x + 1;
+                    let mut y = left_right_bottom[1].y + 1;
                     match active_task_item {
                         TaskItem::Name => {
                             x += task_content.content.len() as u16;
-                            y += 3;
                         }
                         TaskItem::Desc => {
                             x += task_content.description.len() as u16;
-                            y += 6;
+                            y += 3;
                         }
                         TaskItem::Label => {
                             x += task_content.labels.len() as u16;
+                            y += 6;
+                        }
+                        TaskItem::Due => {
+                            x += task_content.due_string.len() as u16;
                             y += 9;
                         }
                         TaskItem::Prio => {
                             x += task_content.priority.len() as u16;
-                            y += 12;
-                        }
-                        TaskItem::Due => {
-                            x = task_content.due_string.len() as u16 + task_width_33[1].x + 3;
                             y += 12;
                         }
                         _ => {}
@@ -344,7 +347,6 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                         left_right_bottom.clone(),
                         &highlight,
                         task_content.clone(),
-                        task_width_33,
                     );
                 }
                 _ => {}
@@ -586,6 +588,7 @@ pub fn push_char_to_field(
         TaskItem::Name => task_content.content.push(e),
         TaskItem::Desc => task_content.description.push(e),
         TaskItem::Label => task_content.labels.push(e),
+        TaskItem::Due => task_content.due_string.push(e),
         TaskItem::Prio => {
             task_content.priority.push(e);
             match task_content.priority.parse::<usize>() {
@@ -593,7 +596,6 @@ pub fn push_char_to_field(
                 _ => task_content.priority.clear(),
             };
         }
-        TaskItem::Due => task_content.due_string.push(e),
         _ => {}
     }
     match active_project_item {
@@ -612,8 +614,8 @@ pub fn remove_char_from_field(
         TaskItem::Name => task_content.content.pop(),
         TaskItem::Desc => task_content.description.pop(),
         TaskItem::Label => task_content.labels.pop(),
-        TaskItem::Prio => task_content.priority.pop(),
         TaskItem::Due => task_content.due_string.pop(),
+        TaskItem::Prio => task_content.priority.pop(),
         _ => None,
     };
     match active_project_item {
@@ -656,16 +658,16 @@ pub fn change_active_add_task_input_field(
             highlight.label = Color::LightRed;
         }
         TaskItem::Label => {
-            *active_task_item = TaskItem::Prio;
-            *highlight = AddTaskHighlight::default();
-            highlight.prio = Color::LightRed;
-        }
-        TaskItem::Prio => {
             *active_task_item = TaskItem::Due;
             *highlight = AddTaskHighlight::default();
             highlight.due = Color::LightRed;
         }
         TaskItem::Due => {
+            *active_task_item = TaskItem::Prio;
+            *highlight = AddTaskHighlight::default();
+            highlight.prio = Color::LightRed;
+        }
+        TaskItem::Prio => {
             *active_task_item = TaskItem::Name;
             *highlight = AddTaskHighlight::default();
             highlight.name = Color::LightRed;

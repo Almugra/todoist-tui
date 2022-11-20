@@ -71,14 +71,14 @@ pub fn render_key_tabs() -> Tabs<'static> {
     key_tabs
 }
 
-pub fn render_home<'a>(color: Color) -> Paragraph<'a> {
+pub fn render_home<'a>() -> Paragraph<'a> {
     let home = Paragraph::new(vec![
         Spans::from(vec![Span::raw("")]),
-        Spans::from(vec![Span::raw("Welcome")]),
         Spans::from(vec![Span::raw("")]),
-        Spans::from(vec![Span::raw("to")]),
         Spans::from(vec![Span::raw("")]),
-        Spans::from(vec![Span::raw("todoist-tui")]),
+        Spans::from(vec![Span::raw("")]),
+        Spans::from(vec![Span::raw("")]),
+        Spans::from(vec![Span::raw("")]),
     ])
     .alignment(Alignment::Center)
     .block(
@@ -86,7 +86,6 @@ pub fn render_home<'a>(color: Color) -> Paragraph<'a> {
             .borders(Borders::ALL)
             .style(Style::default().fg(Color::White))
             .title("Home")
-            .border_style(Style::default().fg(color))
             .border_type(BorderType::Plain),
     );
     home
@@ -94,20 +93,7 @@ pub fn render_home<'a>(color: Color) -> Paragraph<'a> {
 
 pub fn render_add_tasks<'a>(
     highlight: &AddTaskHighlight,
-) -> (
-    Block<'a>,
-    Block<'a>,
-    Block<'a>,
-    Block<'a>,
-    Block<'a>,
-    Block<'a>,
-) {
-    let outer = Block::default()
-        .title("Add Task")
-        .borders(Borders::ALL)
-        .style(Style::default().fg(Color::White))
-        .border_type(BorderType::Plain);
-
+) -> (Block<'a>, Block<'a>, Block<'a>, Block<'a>, Block<'a>) {
     let name = Block::default()
         .title("Name")
         .borders(Borders::ALL)
@@ -138,7 +124,7 @@ pub fn render_add_tasks<'a>(
         .style(Style::default().fg(highlight.due))
         .border_type(BorderType::Plain);
 
-    (outer, name, desc, prio, label, due)
+    (name, desc, prio, label, due)
 }
 
 pub fn render_projects<'a>(
@@ -196,44 +182,43 @@ pub fn render_projects<'a>(
         .iter()
         .filter(|task| task.project_id == selected_project.id)
         .map(|task| {
-            let datetime: String = match &task.due {
-                Some(due) => match &due.datetime {
-                    Some(datetime) => datetime.replace("T", " "),
-                    None => String::new(),
-                },
-                None => String::new(),
-            };
-            let mut height = 2;
-            let mut height_mut = |x: String| {
-                if !x.is_empty() {
-                    height += 1;
-                }
-            };
-            height_mut(task.description.clone());
-            height_mut(task.labels.join("").clone());
-            height_mut(datetime.clone());
-
             let style = Style::default()
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
                 .fg(Color::LightRed);
             let empty = Cell::from("");
-            let row = Cell::from(vec![
-                Spans::from(Span::styled(task.content.clone(), style)),
-                Spans::from(task.description.clone()),
-                Spans::from(task.labels.join(", ")),
-                Spans::from(datetime),
-            ]);
-            Row::new(vec![empty, row]).height(height)
+
+            let mut updated_row = vec![];
+            let mut height = 2;
+
+            updated_row.push(Spans::from(Span::styled(task.content.clone(), style)));
+
+            if task.description.len() != 0 {
+                height += 1;
+                updated_row.push(Spans::from(task.description.clone()));
+            }
+            if task.labels.len() != 0 {
+                height += 1;
+                updated_row.push(Spans::from(task.labels.join(", ")));
+            }
+
+            match &task.due {
+                Some(due) => match &due.datetime {
+                    Some(datetime) => {
+                        height += 1;
+                        updated_row.push(Spans::from(datetime.replace("T", " ")));
+                    }
+                    None => {}
+                },
+                None => {}
+            };
+
+            Row::new(vec![empty, Cell::from(updated_row)]).height(height)
         })
         .collect();
 
     let task_list = Table::new(task_rows)
         .block(task_block)
-        .highlight_style(
-            Style::default()
-                //.fg(Color::Rgb(255, 172, 172))
-                .add_modifier(Modifier::BOLD),
-        )
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .column_spacing(1)
         .highlight_symbol(">")
         .widths(&[Constraint::Max(2), Constraint::Percentage(100)]);
@@ -242,12 +227,12 @@ pub fn render_projects<'a>(
         .block(projects_block)
         .highlight_style(
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::LightRed)
+                .fg(Color::LightRed)
                 .add_modifier(Modifier::BOLD),
         )
         .column_spacing(1)
-        .widths(&[Constraint::Length(35), Constraint::Length(5)]);
+        .highlight_symbol(">")
+        .widths(&[Constraint::Percentage(89), Constraint::Percentage(5)]);
 
     (project_list, task_list)
 }
@@ -274,55 +259,25 @@ pub fn render_task_item<'a, B: Backend>(
     project_chunks: Vec<Rect>,
     highlight: &AddTaskHighlight,
     task_content: TaskContent,
-    task_width_33: Vec<Rect>,
 ) -> () {
     let task_width_full = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(100)].as_ref())
         .split(project_chunks[1]);
 
-    let add_task_chunks_left = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(2)
-        .constraints([
-            Constraint::Percentage(8),
-            Constraint::Percentage(8),
-            Constraint::Percentage(8),
-            Constraint::Percentage(8),
-            Constraint::Percentage(8),
-            Constraint::Percentage(8),
-        ])
-        .split(task_width_33[0]);
-
-    let add_task_chunks_mid = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(2)
-        .constraints([
-            Constraint::Percentage(8),
-            Constraint::Percentage(8),
-            Constraint::Percentage(8),
-            Constraint::Percentage(8),
-            Constraint::Percentage(8),
-            Constraint::Percentage(8),
-        ])
-        .split(task_width_33[1]);
-
     let desc_width = Layout::default()
         .direction(Direction::Vertical)
-        .margin(2)
         .constraints([
-            Constraint::Percentage(8),
-            Constraint::Percentage(8),
-            Constraint::Percentage(8),
-            Constraint::Percentage(8),
-            Constraint::Percentage(8),
-            Constraint::Percentage(8),
-            Constraint::Percentage(8),
-            Constraint::Percentage(8),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
         ])
         .split(task_width_full[0]);
 
-    let (outer, name, desc, prio, label, due) = render_add_tasks(&highlight);
+    let (name, desc, prio, label, due) = render_add_tasks(&highlight);
     let name = Paragraph::new(task_content.content.as_ref())
         .style(Style::default().fg(Color::White))
         .block(name);
@@ -338,10 +293,9 @@ pub fn render_task_item<'a, B: Backend>(
     let due = Paragraph::new(task_content.due_string.as_ref())
         .style(Style::default().fg(Color::White))
         .block(due);
-    rect.render_widget(outer, project_chunks[1]);
     rect.render_widget(name, desc_width[0]);
     rect.render_widget(desc, desc_width[1]);
     rect.render_widget(label, desc_width[2]);
-    rect.render_widget(prio, add_task_chunks_left[3]);
-    rect.render_widget(due, add_task_chunks_mid[3]);
+    rect.render_widget(due, desc_width[3]);
+    rect.render_widget(prio, desc_width[4]);
 }
