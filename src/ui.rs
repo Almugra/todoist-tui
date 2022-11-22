@@ -13,7 +13,8 @@ use crate::{
     AddTaskHighlight, MenuItem,
 };
 
-pub fn render_menu_tabs(active_menu_item: MenuItem) -> Tabs<'static> {
+
+pub fn render_menu_tabs(active_menu_item: MenuItem, config_color: Color) -> Tabs<'static> {
     let menu_titles = vec!["Home", "Projects", "Tasks"];
 
     let menu: Vec<_> = menu_titles
@@ -37,7 +38,7 @@ pub fn render_menu_tabs(active_menu_item: MenuItem) -> Tabs<'static> {
         .style(Style::default().fg(Color::White))
         .highlight_style(
             Style::default()
-                .fg(Color::LightRed)
+                .fg(config_color)
                 .add_modifier(Modifier::BOLD),
         )
         .divider(symbols::DOT);
@@ -45,7 +46,7 @@ pub fn render_menu_tabs(active_menu_item: MenuItem) -> Tabs<'static> {
     menu_tabs
 }
 
-pub fn render_key_tabs() -> Tabs<'static> {
+pub fn render_key_tabs(config_color: Color) -> Tabs<'static> {
     let key_titles = vec!["Add Task", "Post Project", "Delete", "Quit"];
     let keybinds: Vec<_> = key_titles
         .iter()
@@ -55,7 +56,7 @@ pub fn render_key_tabs() -> Tabs<'static> {
                 Span::styled(
                     left,
                     Style::default()
-                        .fg(Color::LightRed)
+                        .fg(config_color)
                         .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
                 ),
                 Span::styled(right, Style::default().fg(Color::White)),
@@ -107,19 +108,19 @@ pub fn render_add_tasks<'a>(
         .border_type(BorderType::Plain);
 
     let label = Block::default()
-        .title("Labels • Separate with comma")
+        .title("Labels")
         .borders(Borders::ALL)
         .style(Style::default().fg(highlight.label))
         .border_type(BorderType::Plain);
 
     let prio = Block::default()
-        .title("Priority • Highest = 4 and Lowest = 1")
+        .title("Priority")
         .borders(Borders::ALL)
         .style(Style::default().fg(highlight.prio))
         .border_type(BorderType::Plain);
 
     let due = Block::default()
-        .title("Due date • e.g. 'Next week friday at 12:00' ")
+        .title("Due date")
         .borders(Borders::ALL)
         .style(Style::default().fg(highlight.due))
         .border_type(BorderType::Plain);
@@ -133,6 +134,7 @@ pub fn render_projects<'a>(
     task_list: &mut Vec<Task>,
     color_left: Color,
     color_right: Color,
+    config_color: Color,
 ) -> (Table<'a>, Table<'a>) {
     let projects_block = Block::default()
         .borders(Borders::ALL)
@@ -184,7 +186,7 @@ pub fn render_projects<'a>(
         .map(|task| {
             let style = Style::default()
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
-                .fg(Color::LightRed);
+                .fg(config_color);
             let empty = Cell::from("");
 
             let mut updated_row = vec![];
@@ -227,7 +229,7 @@ pub fn render_projects<'a>(
         .block(projects_block)
         .highlight_style(
             Style::default()
-                .fg(Color::LightRed)
+                .fg(config_color)
                 .add_modifier(Modifier::BOLD),
         )
         .column_spacing(1)
@@ -241,11 +243,12 @@ pub fn render_project_item<B: Backend>(
     rect: &mut Frame<B>,
     project_chunks: Vec<Rect>,
     project_item: PostProject,
+    config_color: Color,
 ) {
     let name = Block::default()
         .title("Add Project")
         .borders(Borders::ALL)
-        .style(Style::default().fg(Color::LightRed))
+        .style(Style::default().fg(config_color))
         .border_type(BorderType::Plain);
 
     let name = Paragraph::new(project_item.name.as_ref())

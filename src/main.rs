@@ -1,4 +1,5 @@
 use api::{delete_task, get_tasks, post_projects, PostProject, Task, TaskContent};
+use config::{get_config, Config};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event as CEvent, KeyCode},
     execute,
@@ -101,7 +102,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
 
-    let res = run_app(&mut terminal);
+    let config: Arc<Config> = Arc::new(get_config());
+
+    let res = run_app(&mut terminal, config);
 
     disable_raw_mode()?;
     execute!(
@@ -118,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
+pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, config: Arc<Config>) -> io::Result<()> {
     let (tx, rx) = mpsc::channel();
     let tick_rate = Duration::from_millis(200);
     thread::spawn(move || {
@@ -151,12 +154,14 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
     let projects = Arc::new(Mutex::new(vec![Project::name("Loading...")]));
     let tasks = Arc::new(Mutex::new(vec![]));
     let projects2 = Arc::clone(&projects);
+    let token = Arc::clone(&config).token.clone();
     tokio::spawn(async move {
-        *projects2.lock().unwrap() = get_projects().await.unwrap();
+        *projects2.lock().unwrap() = get_projects(token).await.unwrap();
     });
     let tasks2 = Arc::clone(&tasks);
+    let token = Arc::clone(&config).token.clone();
     tokio::spawn(async move {
-        *tasks2.lock().unwrap() = get_tasks().await.unwrap();
+        *tasks2.lock().unwrap() = get_tasks(token).await.unwrap();
         tasks2
             .lock()
             .unwrap()
@@ -240,12 +245,12 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                 .constraints(constraints)
                 .split(task_add_chunk[1]);
 
-            let menu_tabs = render_menu_tabs(active_menu_item);
+            let menu_tabs = render_menu_tabs(active_menu_item, config.color.clone());
             rect.render_widget(menu_tabs, left_right_top[0]);
-            let key_tabs = render_key_tabs();
+            let key_tabs = render_key_tabs(config.color.clone());
             rect.render_widget(key_tabs, left_right_top[1]);
 
-            let light_red = Color::LightRed;
+            let highlight_color = config.color.clone();
             let white = Color::White;
             match active_menu_item {
                 MenuItem::Home => rect.render_widget(render_home(), bottom_fullscreen[0]),
@@ -254,8 +259,9 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                         &project_list_state,
                         projects.lock().unwrap().clone(),
                         &mut tasks.lock().unwrap().clone(),
-                        light_red,
+                        highlight_color,
                         white,
+                        config.color.clone(),
                     );
                     rect.render_stateful_widget(
                         left,
@@ -270,7 +276,8 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                         projects.lock().unwrap().clone(),
                         &mut tasks.lock().unwrap().clone(),
                         white,
-                        light_red,
+                        highlight_color,
+                        config.color.clone(),
                     );
                     rect.render_stateful_widget(
                         left,
@@ -286,6 +293,7 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                         &mut tasks.lock().unwrap().clone(),
                         white,
                         white,
+                        config.color.clone(),
                     );
                     rect.render_stateful_widget(
                         left,
@@ -301,6 +309,7 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                         &mut tasks.lock().unwrap().clone(),
                         white,
                         white,
+                        config.color.clone(),
                     );
                     rect.set_cursor(
                         project_chunks_add[0].x + project_item.name.len() as u16 + 1,
@@ -312,7 +321,12 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
             }
 
             if active_project_item == ProjectItem::Name {
-                render_project_item(rect, project_chunks_add.clone(), project_item.clone());
+                render_project_item(
+                    rect,
+                    project_chunks_add.clone(),
+                    project_item.clone(),
+                    config.color.clone(),
+                );
             }
 
             match active_task_item {
@@ -399,9 +413,11 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                         let temp_task =
                             Task::temp(task_content.clone(), current_selected_project.to_string());
                         tasks.lock().unwrap().push(temp_task.clone());
+                        let token = Arc::clone(&config).token.clone();
+                        let token2 = Arc::clone(&config).token.clone();
                         tokio::spawn(async move {
-                            let _ = post_task(temp_task).await;
-                            *tasks.lock().unwrap() = get_tasks().await.unwrap();
+                            let _ = post_task(token, temp_task).await;
+                            *tasks.lock().unwrap() = get_tasks(token2).await.unwrap();
                             tasks
                                 .lock()
                                 .unwrap()
@@ -417,22 +433,24 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                     let projects = Arc::clone(&projects);
                     let temp_project = Project::name(&project_item.name);
                     projects.lock().unwrap().push(temp_project.clone());
+                    let token = Arc::clone(&config).token.clone();
+                    let token2 = Arc::clone(&config).token.clone();
                     tokio::spawn(async move {
-                        let _ = post_projects(project_item).await;
-                        *projects.lock().unwrap() = get_projects().await.unwrap();
+                        let _ = post_projects(token, project_item).await;
+                        *projects.lock().unwrap() = get_projects(token2).await.unwrap();
                     });
                     project_item = PostProject::default();
                     active_menu_item = MenuItem::Projects;
                     active_project_item = ProjectItem::Empty;
                 }
                 KeyCode::Tab if active_menu_item == MenuItem::AddTask => {
-                    change_active_add_task_input_field(&mut highlight, &mut active_task_item);
+                    change_active_add_task_input_field(&mut highlight, &mut active_task_item, config.color.clone());
                 }
                 KeyCode::BackTab if active_menu_item == MenuItem::AddTask => {
-                    change_active_add_task_input_field(&mut highlight, &mut active_task_item);
-                    change_active_add_task_input_field(&mut highlight, &mut active_task_item);
-                    change_active_add_task_input_field(&mut highlight, &mut active_task_item);
-                    change_active_add_task_input_field(&mut highlight, &mut active_task_item);
+                    change_active_add_task_input_field(&mut highlight, &mut active_task_item, config.color.clone());
+                    change_active_add_task_input_field(&mut highlight, &mut active_task_item, config.color.clone());
+                    change_active_add_task_input_field(&mut highlight, &mut active_task_item, config.color.clone());
+                    change_active_add_task_input_field(&mut highlight, &mut active_task_item, config.color.clone());
                 }
                 KeyCode::Char('q') => break,
                 KeyCode::Char('h') => match active_menu_item {
@@ -478,7 +496,7 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                     if let MenuItem::Projects | MenuItem::Tasks = active_menu_item {
                         active_menu_item = MenuItem::AddTask;
                         active_task_item = TaskItem::Name;
-                        highlight.name = Color::LightRed;
+                        highlight.name = config.color.clone();
                     }
                 }
                 KeyCode::Char('d') => match active_menu_item {
@@ -502,10 +520,12 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                                 let task_at_select =
                                     tasks2[task_count + selected].id.to_owned().clone();
                                 let tasks3 = Arc::clone(&tasks);
+                                let token = Arc::clone(&config).token.clone();
+                                let token2 = Arc::clone(&config).token.clone();
                                 tokio::spawn(async move {
                                     tasks3.lock().unwrap().remove(selected + task_count);
-                                    let _ = delete_task(task_at_select.to_string()).await;
-                                    *tasks3.lock().unwrap() = get_tasks().await.unwrap();
+                                    let _ = delete_task(token, task_at_select.to_string()).await;
+                                    *tasks3.lock().unwrap() = get_tasks(token2).await.unwrap();
                                     tasks3
                                         .lock()
                                         .unwrap()
@@ -533,7 +553,8 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                                 continue;
                             }
                             let id = projects.lock().unwrap()[selected].id.to_owned();
-                            tokio::spawn(async move { delete_project(id).await });
+                            let token = Arc::clone(&config).token.clone();
+                            tokio::spawn(async move { delete_project(token, id).await });
                             projects.lock().unwrap().remove(selected);
                             if selected > 0 {
                                 project_list_state.select(Some(selected - 1));
@@ -645,32 +666,33 @@ pub fn cleanup(
 pub fn change_active_add_task_input_field(
     highlight: &mut AddTaskHighlight,
     active_task_item: &mut TaskItem,
+    config_color: Color,
 ) {
     match active_task_item {
         TaskItem::Name => {
             *active_task_item = TaskItem::Desc;
             *highlight = AddTaskHighlight::default();
-            highlight.desc = Color::LightRed;
+            highlight.desc = config_color.clone();
         }
         TaskItem::Desc => {
             *active_task_item = TaskItem::Label;
             *highlight = AddTaskHighlight::default();
-            highlight.label = Color::LightRed;
+            highlight.label = config_color.clone();
         }
         TaskItem::Label => {
             *active_task_item = TaskItem::Due;
             *highlight = AddTaskHighlight::default();
-            highlight.due = Color::LightRed;
+            highlight.due = config_color.clone();
         }
         TaskItem::Due => {
             *active_task_item = TaskItem::Prio;
             *highlight = AddTaskHighlight::default();
-            highlight.prio = Color::LightRed;
+            highlight.prio = config_color.clone();
         }
         TaskItem::Prio => {
             *active_task_item = TaskItem::Name;
             *highlight = AddTaskHighlight::default();
-            highlight.name = Color::LightRed;
+            highlight.name = config_color.clone();
         }
         _ => {}
     }
