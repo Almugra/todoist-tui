@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use tui::{
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -9,10 +11,10 @@ use tui::{
 };
 
 use crate::{
-    api::{PostProject, Project, Task, TaskContent},
+    api::{PostProject, Task, TaskContent},
+    menu::Database,
     AddTaskHighlight, MenuItem,
 };
-
 
 pub fn render_menu_tabs(active_menu_item: MenuItem, config_color: Color) -> Tabs<'static> {
     let menu_titles = vec!["Home", "Projects", "Tasks"];
@@ -130,8 +132,7 @@ pub fn render_add_tasks<'a>(
 
 pub fn render_projects<'a>(
     project_table_state: &TableState,
-    project_list: Vec<Project>,
-    task_list: &mut Vec<Task>,
+    database: Arc<Mutex<Database>>,
     color_left: Color,
     color_right: Color,
     config_color: Color,
@@ -161,17 +162,19 @@ pub fn render_projects<'a>(
         counter.to_string()
     }
 
-    let project_items: Vec<_> = project_list
+    let projects = database.lock().unwrap().projects.clone();
+    let tasks = database.lock().unwrap().tasks.clone();
+    let project_items: Vec<_> = projects
         .iter()
         .map(|project| {
             Row::new(vec![
                 project.name.clone(),
-                get_task_from_project_id(project.id.clone(), &mut task_list.clone()),
+                get_task_from_project_id(project.id.clone(), &mut tasks.clone()),
             ])
         })
         .collect();
 
-    let selected_project = project_list
+    let selected_project = projects
         .get(
             project_table_state
                 .selected()
@@ -180,7 +183,7 @@ pub fn render_projects<'a>(
         .expect("exists")
         .clone();
 
-    let task_rows: Vec<_> = task_list
+    let task_rows: Vec<_> = tasks
         .iter()
         .filter(|task| task.project_id == selected_project.id)
         .map(|task| {
@@ -242,7 +245,7 @@ pub fn render_projects<'a>(
 pub fn render_project_item<B: Backend>(
     rect: &mut Frame<B>,
     project_chunks: Vec<Rect>,
-    project_item: PostProject,
+    project_item: &PostProject,
     config_color: Color,
 ) {
     let name = Block::default()
@@ -260,7 +263,7 @@ pub fn render_project_item<B: Backend>(
 pub fn render_task_item<'a, B: Backend>(
     rect: &mut Frame<B>,
     project_chunks: Vec<Rect>,
-    highlight: &AddTaskHighlight,
+    highlight: AddTaskHighlight,
     task_content: TaskContent,
 ) -> () {
     let task_width_full = Layout::default()
