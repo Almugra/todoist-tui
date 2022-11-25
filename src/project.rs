@@ -103,9 +103,30 @@ pub fn render_projects<'a>(
 
             updated_row.push(Spans::from(Span::styled(task.content.clone(), style)));
 
-            if task.description.len() != 0 {
-                height += 1;
-                updated_row.push(Spans::from(task.description.clone()));
+            let desc_len = task.description.len();
+            let mut c_desc = task.description.clone();
+            if desc_len != 0 {
+                if desc_len >= 38 {
+                    for _ in 1..=(desc_len / 38) {
+                        let end_split = c_desc.split_off(38);
+                        if end_split.len() <= 3 {
+                            c_desc.push_str(&end_split);
+                            updated_row.push(Spans::from(c_desc.clone()));
+                            c_desc.clear();
+                        } else {
+                            updated_row.push(Spans::from(c_desc.clone()));
+                            c_desc = end_split;
+                        }
+                        height += 1;
+                    }
+                    if c_desc.len() > 0 {
+                        height += 1;
+                        updated_row.push(Spans::from(c_desc));
+                    }
+                } else {
+                    height += 1;
+                    updated_row.push(Spans::from(task.description.clone()));
+                }
             }
             if task.labels.len() != 0 {
                 height += 1;
