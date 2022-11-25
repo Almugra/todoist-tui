@@ -2,17 +2,20 @@ use std::sync::{Arc, Mutex};
 
 use tui::{
     backend::Backend,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::Color,
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    symbols,
+    text::{Span, Spans},
+    widgets::{Block, Borders, Tabs},
     Frame,
 };
 
 use crate::{
     api::{PostProject, Project, Task, TaskContent},
     config::Config,
-    project::{ProjectItem, ProjectStatus},
+    project::{render_projects, ProjectItem, ProjectStatus},
     task::{AddTaskHighlight, TaskItem, TaskStatus},
-    ui::{render_home, render_projects},
+    ui::render_home,
 };
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -125,8 +128,14 @@ pub fn render_active_menu_widget<B: Backend>(
                 Color::White,
                 config.color.clone(),
             );
+            let name_len = project_status.project_item.name.len();
+            let mut next_line_buffer = 0;
+            if name_len >= 25 {
+                next_line_buffer = 3;
+            }
             rect.set_cursor(
-                project_chunks_add[0].x + project_status.project_item.name.len() as u16 + 1,
+                project_chunks_add[0].x + 1 + name_len as u16 - ((name_len / 25) * 25) as u16
+                    + next_line_buffer,
                 project_chunks_add[0].y + 1,
             );
             rect.render_widget(left, project_chunks_2[0]);
@@ -235,4 +244,62 @@ pub fn cleanup(
 
     project_status.project_item = PostProject::default();
     project_status.active_project_item = ProjectItem::Empty;
+}
+
+pub fn render_menu_tabs(active_menu_item: MenuItem, config_color: Color) -> Tabs<'static> {
+    let menu_titles = vec!["Home", "Projects", "Tasks"];
+
+    let menu: Vec<_> = menu_titles
+        .iter()
+        .map(|t| {
+            Spans::from(Span::styled(
+                t.to_owned(),
+                Style::default().fg(Color::White),
+            ))
+        })
+        .collect();
+
+    let menu_tabs = Tabs::new(menu)
+        .select(active_menu_item.into())
+        .block(
+            Block::default()
+                .title("Menu")
+                .title_alignment(Alignment::Center)
+                .borders(Borders::ALL),
+        )
+        .style(Style::default().fg(Color::White))
+        .highlight_style(
+            Style::default()
+                .fg(config_color)
+                .add_modifier(Modifier::BOLD),
+        )
+        .divider(symbols::DOT);
+
+    menu_tabs
+}
+
+pub fn render_key_tabs(config_color: Color) -> Tabs<'static> {
+    let key_titles = vec!["Add Task", "Post Project", "Delete", "Quit"];
+    let keybinds: Vec<_> = key_titles
+        .iter()
+        .map(|t| {
+            let (left, right) = t.split_at(1);
+            Spans::from(vec![
+                Span::styled(
+                    left,
+                    Style::default()
+                        .fg(config_color)
+                        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+                ),
+                Span::styled(right, Style::default().fg(Color::White)),
+            ])
+        })
+        .collect();
+
+    let key_tabs = Tabs::new(keybinds)
+        .block(Block::default().title("Keybinds").borders(Borders::ALL))
+        .style(Style::default().fg(Color::White))
+        .divider(symbols::DOT);
+
+    key_tabs
 }

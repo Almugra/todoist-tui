@@ -1,6 +1,12 @@
-use tui::{style::Color, widgets::TableState, layout::Rect, Frame, backend::Backend};
+use tui::{
+    backend::Backend,
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Style},
+    widgets::{Block, BorderType, Borders, Paragraph, TableState},
+    Frame,
+};
 
-use crate::{api::TaskContent, ui::render_task_item};
+use crate::api::TaskContent;
 
 #[derive(Copy, Clone, Debug)]
 pub struct AddTaskHighlight {
@@ -54,8 +60,8 @@ pub enum TaskItem {
 pub fn render_active_task_input_widget<B: Backend>(
     rect: &mut Frame<B>,
     task_status: &TaskStatus,
-    left_right_bottom: Vec<Rect>, 
-    ) {
+    left_right_bottom: Vec<Rect>,
+) {
     match task_status.active_task_item {
         _ if task_status.active_task_item != TaskItem::Empty => {
             let mut x = left_right_bottom[1].x + 1;
@@ -63,18 +69,38 @@ pub fn render_active_task_input_widget<B: Backend>(
             let task_content = &task_status.task_content;
             match task_status.active_task_item {
                 TaskItem::Name => {
-                    x += task_content.content.len() as u16;
+                    let name_len = task_content.content.len();
+                    let mut next_line_buffer = 0;
+                    if name_len >= 40 {
+                        next_line_buffer = 3;
+                    }
+                    x += name_len as u16 - ((name_len / 40) * 40) as u16 + next_line_buffer;
                 }
                 TaskItem::Desc => {
-                    x += task_content.description.len() as u16;
+                    let desc_len = task_content.description.len();
+                    let mut next_line_buffer = 0;
+                    if desc_len >= 40 {
+                        next_line_buffer = 3;
+                    }
+                    x += desc_len as u16 - ((desc_len / 40) * 40) as u16 + next_line_buffer;
                     y += 3;
                 }
                 TaskItem::Label => {
-                    x += task_content.labels.len() as u16;
+                    let label_len = task_content.labels.len();
+                    let mut next_line_buffer = 0;
+                    if label_len > 40 {
+                        next_line_buffer = 3;
+                    }
+                    x += label_len as u16 - ((label_len / 40) * 40) as u16 + next_line_buffer;
                     y += 6;
                 }
                 TaskItem::Due => {
-                    x += task_content.due_string.len() as u16;
+                    let due_len = task_content.due_string.len();
+                    let mut next_line_buffer = 0;
+                    if due_len > 40 {
+                        next_line_buffer = 3;
+                    }
+                    x += due_len as u16 - ((due_len / 40) * 40) as u16 + next_line_buffer;
                     y += 9;
                 }
                 TaskItem::Prio => {
@@ -88,9 +114,124 @@ pub fn render_active_task_input_widget<B: Backend>(
                 rect,
                 left_right_bottom.clone(),
                 task_status.add_task_highlight,
-                task_status.task_content.clone(),
+                &mut task_status.task_content.clone(),
             );
         }
         _ => {}
     }
+}
+
+pub fn render_add_tasks<'a>(
+    highlight: &AddTaskHighlight,
+) -> (Block<'a>, Block<'a>, Block<'a>, Block<'a>, Block<'a>) {
+    let name = Block::default()
+        .title("Name")
+        .borders(Borders::ALL)
+        .style(Style::default().fg(highlight.name))
+        .border_type(BorderType::Plain);
+
+    let desc = Block::default()
+        .title("Description")
+        .borders(Borders::ALL)
+        .style(Style::default().fg(highlight.desc))
+        .border_type(BorderType::Plain);
+
+    let label = Block::default()
+        .title("Labels")
+        .borders(Borders::ALL)
+        .style(Style::default().fg(highlight.label))
+        .border_type(BorderType::Plain);
+
+    let prio = Block::default()
+        .title("Priority")
+        .borders(Borders::ALL)
+        .style(Style::default().fg(highlight.prio))
+        .border_type(BorderType::Plain);
+
+    let due = Block::default()
+        .title("Due date")
+        .borders(Borders::ALL)
+        .style(Style::default().fg(highlight.due))
+        .border_type(BorderType::Plain);
+
+    (name, desc, prio, label, due)
+}
+
+pub fn render_task_item<'a, B: Backend>(
+    rect: &mut Frame<B>,
+    project_chunks: Vec<Rect>,
+    highlight: AddTaskHighlight,
+    task_content: &mut TaskContent,
+) -> () {
+    let task_width_full = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(100)].as_ref())
+        .split(project_chunks[1]);
+
+    let desc_width = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+        ])
+        .split(task_width_full[0]);
+
+    let (name, desc, prio, label, due) = render_add_tasks(&highlight);
+
+    let task_name = task_content.content.clone();
+    let name_len = task_content.content.len();
+    let mut current_name = task_name.clone();
+    if name_len >= 40 {
+        let (_, second) = task_name.split_at(((name_len / 40) * 40) - 3);
+        current_name = second.to_string();
+    }
+    let name = Paragraph::new(current_name)
+        .style(Style::default().fg(Color::White))
+        .block(name);
+
+    let task_desc = task_content.description.clone();
+    let desc_len = task_content.description.len();
+    let mut current_desc = task_desc.clone();
+    if desc_len >= 40 {
+        let (_, second) = task_desc.split_at(((desc_len / 40) * 40) - 3);
+        current_desc = second.to_string();
+    }
+    let desc = Paragraph::new(current_desc)
+        .style(Style::default().fg(Color::White))
+        .block(desc);
+
+    let task_label = task_content.labels.clone();
+    let label_len = task_content.labels.len();
+    let mut current_label = task_label.clone();
+    if label_len >= 40 {
+        let (_, second) = task_label.split_at(((label_len / 40) * 40) - 3);
+        current_label = second.to_string();
+    }
+    let label = Paragraph::new(current_label)
+        .style(Style::default().fg(Color::White))
+        .block(label);
+
+    let task_due = task_content.due_string.clone();
+    let due_len = task_content.due_string.len();
+    let mut current_due = task_due.clone();
+    if due_len >= 40 {
+        let (_, second) = task_due.split_at(((due_len / 40) * 40) - 3);
+        current_due = second.to_string();
+    }
+    let due = Paragraph::new(current_due)
+        .style(Style::default().fg(Color::White))
+        .block(due);
+
+    let prio = Paragraph::new(task_content.priority.as_ref())
+        .style(Style::default().fg(Color::White))
+        .block(prio);
+    rect.render_widget(name, desc_width[0]);
+    rect.render_widget(desc, desc_width[1]);
+    rect.render_widget(label, desc_width[2]);
+    rect.render_widget(due, desc_width[3]);
+    rect.render_widget(prio, desc_width[4]);
 }

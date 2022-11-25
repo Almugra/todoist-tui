@@ -1,6 +1,18 @@
-use tui::{backend::Backend, widgets::TableState, Frame};
+use std::sync::{Arc, Mutex};
 
-use crate::{api::PostProject, config::Config, ui::render_project_item};
+use tui::{
+    backend::Backend,
+    layout::{Alignment, Constraint, Rect},
+    style::{Color, Modifier, Style},
+    text::{Span, Spans},
+    widgets::{Block, BorderType, Borders, Cell, Paragraph, Row, Table, TableState},
+    Frame,
+};
+
+use crate::{
+    api::{PostProject, Task},
+    menu::Database,
+};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ProjectItem {
@@ -24,18 +36,140 @@ impl Default for ProjectStatus {
     }
 }
 
-pub fn render_active_project_input_widget<B: Backend>(
-    rect: &mut Frame<B>,
-    project_status: &ProjectStatus,
-    project_chunks_add: Vec<tui::layout::Rect>,
-    config: &Config,
-) {
-    if project_status.active_project_item == ProjectItem::Name {
-        render_project_item(
-            rect,
-            project_chunks_add.clone(),
-            &project_status.project_item,
-            config.color.clone(),
-        );
+pub fn render_projects<'a>(
+    project_table_state: &TableState,
+    database: Arc<Mutex<Database>>,
+    color_left: Color,
+    color_right: Color,
+    config_color: Color,
+) -> (Table<'a>, Table<'a>) {
+    let projects_block = Block::default()
+        .borders(Borders::ALL)
+        .title("Projects")
+        .style(Style::default().fg(Color::White))
+        .title_alignment(Alignment::Center)
+        .border_style(Style::default().fg(color_left))
+        .border_type(BorderType::Plain);
+
+    let task_block = Block::default()
+        .borders(Borders::ALL)
+        .style(Style::default().fg(Color::White))
+        .border_type(BorderType::Plain)
+        .border_style(Style::default().fg(color_right))
+        .title("Tasks");
+
+    pub fn get_task_from_project_id(project_id: String, task_list: &mut Vec<Task>) -> String {
+        let mut counter = 0;
+        (0..task_list.len()).for_each(|i| {
+            if project_id == task_list[i].project_id {
+                counter += 1;
+            }
+        });
+        counter.to_string()
     }
+
+    let projects = database.lock().unwrap().projects.clone();
+    let tasks = database.lock().unwrap().tasks.clone();
+    let project_items: Vec<_> = projects
+        .iter()
+        .map(|project| {
+            Row::new(vec![
+                project.name.clone(),
+                get_task_from_project_id(project.id.clone(), &mut tasks.clone()),
+            ])
+        })
+        .collect();
+
+    let selected_project = projects
+        .get(
+            project_table_state
+                .selected()
+                .expect("there is always a selected project"),
+        )
+        .expect("exists")
+        .clone();
+
+    let task_rows: Vec<_> = tasks
+        .iter()
+        .filter(|task| task.project_id == selected_project.id)
+        .map(|task| {
+            let style = Style::default()
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                .fg(config_color);
+            let empty = Cell::from("");
+
+            let mut updated_row = vec![];
+            let mut height = 2;
+
+            updated_row.push(Spans::from(Span::styled(task.content.clone(), style)));
+
+            if task.description.len() != 0 {
+                height += 1;
+                updated_row.push(Spans::from(task.description.clone()));
+            }
+            if task.labels.len() != 0 {
+                height += 1;
+                updated_row.push(Spans::from(task.labels.join(", ")));
+            }
+
+            match &task.due {
+                Some(due) => match &due.datetime {
+                    Some(datetime) => {
+                        height += 1;
+                        updated_row.push(Spans::from(datetime.replace("T", " ")));
+                    }
+                    None => {}
+                },
+                None => {}
+            };
+
+            Row::new(vec![empty, Cell::from(updated_row)]).height(height)
+        })
+        .collect();
+
+    let task_list = Table::new(task_rows)
+        .block(task_block)
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .column_spacing(1)
+        .highlight_symbol(">")
+        .widths(&[Constraint::Max(2), Constraint::Percentage(100)]);
+
+    let project_list = Table::new(project_items)
+        .block(projects_block)
+        .highlight_style(
+            Style::default()
+                .fg(config_color)
+                .add_modifier(Modifier::BOLD),
+        )
+        .column_spacing(1)
+        .highlight_symbol(">")
+        .widths(&[Constraint::Percentage(89), Constraint::Percentage(5)]);
+
+    (project_list, task_list)
+}
+
+pub fn render_project_item<B: Backend>(
+    rect: &mut Frame<B>,
+    project_chunks: Vec<Rect>,
+    project_item: &PostProject,
+    config_color: Color,
+) {
+    let name = Block::default()
+        .title("Add Project")
+        .borders(Borders::ALL)
+        .style(Style::default().fg(config_color))
+        .border_type(BorderType::Plain);
+
+    let task_name = project_item.name.clone();
+    let name_len = project_item.name.len();
+    let mut current_name = task_name.clone();
+    if name_len >= 25 {
+        let (_, second) = task_name.split_at(((name_len / 25) * 25) - 3);
+        current_name = second.to_string();
+    }
+
+    let name = Paragraph::new(current_name)
+        .style(Style::default().fg(Color::White))
+        .block(name);
+    rect.render_widget(name, project_chunks[0]);
 }

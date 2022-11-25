@@ -6,10 +6,10 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use key_events::{get_key_event, EventExit};
-use menu::create_chunks;
+use menu::{create_chunks, render_key_tabs, render_menu_tabs};
 use menu::{render_active_menu_widget, Database, MenuItem};
 
-use project::{render_active_project_input_widget, ProjectItem, ProjectStatus};
+use project::{render_project_item, ProjectItem, ProjectStatus};
 use std::{io, sync::mpsc};
 use std::{
     sync::Arc,
@@ -19,7 +19,6 @@ use std::{sync::Mutex, thread};
 use task::{render_active_task_input_widget, TaskItem, TaskStatus};
 use tui::backend::Backend;
 use tui::{backend::CrosstermBackend, Terminal};
-use ui::{render_key_tabs, render_menu_tabs};
 
 pub mod api;
 pub mod config;
@@ -144,7 +143,14 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, config: Config) -> io::Re
                 project_chunks_add.clone(),
             );
 
-            render_active_project_input_widget(rect, &project_status, project_chunks_add, &config);
+            if project_status.active_project_item == ProjectItem::Name {
+                render_project_item(
+                    rect,
+                    project_chunks_add.clone(),
+                    &project_status.project_item,
+                    config.color.clone(),
+                );
+            }
 
             render_active_task_input_widget(rect, &task_status, left_right_bottom);
         })?;
