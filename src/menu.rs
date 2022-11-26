@@ -13,9 +13,9 @@ use tui::{
 use crate::{
     api::{PostProject, Project, Task, TaskContent},
     config::Config,
+    home::render_home,
     project::{render_projects, ProjectItem, ProjectStatus},
     task::{AddTaskHighlight, TaskItem, TaskStatus},
-    ui::render_home,
 };
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -61,11 +61,11 @@ pub fn render_active_menu_widget<B: Backend>(
     project_status: &mut ProjectStatus,
     task_status: &mut TaskStatus,
     config: &Config,
-    left_right_bottom: Vec<Rect>,
+    projects_or_tasks: Vec<Rect>,
     bottom_fullscreen: Vec<Rect>,
-    task_chunks_add: Vec<Rect>,
-    project_chunks_2: Vec<Rect>,
-    project_chunks_add: Vec<Rect>,
+    task_with_add_task: Vec<Rect>,
+    project_with_add_project: Vec<Rect>,
+    add_project_with_projects: Vec<Rect>,
 ) {
     let highlight_color = config.color.clone();
 
@@ -81,10 +81,10 @@ pub fn render_active_menu_widget<B: Backend>(
             );
             rect.render_stateful_widget(
                 left,
-                left_right_bottom[0],
+                projects_or_tasks[0],
                 &mut project_status.project_table_state,
             );
-            rect.render_widget(right, left_right_bottom[1]);
+            rect.render_widget(right, projects_or_tasks[1]);
         }
         MenuItem::Tasks => {
             let (left, right) = render_projects(
@@ -96,12 +96,12 @@ pub fn render_active_menu_widget<B: Backend>(
             );
             rect.render_stateful_widget(
                 left,
-                left_right_bottom[0],
+                projects_or_tasks[0],
                 &mut project_status.project_table_state,
             );
             rect.render_stateful_widget(
                 right,
-                left_right_bottom[1],
+                projects_or_tasks[1],
                 &mut task_status.task_table_state,
             );
         }
@@ -115,10 +115,10 @@ pub fn render_active_menu_widget<B: Backend>(
             );
             rect.render_stateful_widget(
                 left,
-                left_right_bottom[0],
+                projects_or_tasks[0],
                 &mut project_status.project_table_state,
             );
-            rect.render_widget(right, task_chunks_add[1]);
+            rect.render_widget(right, task_with_add_task[1]);
         }
         MenuItem::AddProject => {
             let (left, right) = render_projects(
@@ -134,12 +134,12 @@ pub fn render_active_menu_widget<B: Backend>(
                 next_line_buffer = 3;
             }
             rect.set_cursor(
-                project_chunks_add[0].x + 1 + name_len as u16 - ((name_len / 25) * 25) as u16
+                add_project_with_projects[0].x + 1 + name_len as u16 - ((name_len / 25) * 25) as u16
                     + next_line_buffer,
-                project_chunks_add[0].y + 1,
+                add_project_with_projects[0].y + 1,
             );
-            rect.render_widget(left, project_chunks_2[0]);
-            rect.render_widget(right, left_right_bottom[1]);
+            rect.render_widget(left, project_with_add_project[0]);
+            rect.render_widget(right, projects_or_tasks[1]);
         }
     }
 }
@@ -154,7 +154,7 @@ pub fn create_chunks(
     Vec<Rect>,
     Vec<Rect>,
 ) {
-    let top_bottom_fullscreen = Layout::default()
+    let top_bottom_split = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
         .constraints([Constraint::Length(3), Constraint::Min(2)].as_ref())
@@ -163,21 +163,21 @@ pub fn create_chunks(
     let bottom_fullscreen = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Length(75), Constraint::Length(40)])
-        .split(top_bottom_fullscreen[1]);
+        .split(top_bottom_split[1]);
 
-    let project_add_chunk = Layout::default()
+    let projects_section_with_add_project_widget = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
         .constraints([Constraint::Length(6), Constraint::Min(50)].as_ref())
         .split(size);
 
-    let task_add_chunk = Layout::default()
+    let task_selection_with_add_task_widget = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
         .constraints([Constraint::Length(18), Constraint::Min(50)].as_ref())
         .split(size);
 
-    let project_add_chunk2 = Layout::default()
+    let add_project_section_with_projects_widget = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
         .constraints(
@@ -196,38 +196,38 @@ pub fn create_chunks(
         Constraint::Length(10),
     ];
 
-    let left_right_top = Layout::default()
+    let menu_or_keybinds = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(constraints)
-        .split(top_bottom_fullscreen[0]);
+        .split(top_bottom_split[0]);
 
-    let left_right_bottom = Layout::default()
+    let projects_or_tasks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(constraints)
-        .split(top_bottom_fullscreen[1]);
+        .split(top_bottom_split[1]);
 
-    let project_chunks_2 = Layout::default()
+    let project_with_add_project = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(constraints)
-        .split(project_add_chunk[1]);
+        .split(projects_section_with_add_project_widget[1]);
 
-    let project_chunks_add = Layout::default()
+    let add_project_with_projects = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(constraints)
-        .split(project_add_chunk2[1]);
+        .split(add_project_section_with_projects_widget[1]);
 
-    let task_chunks_add = Layout::default()
+    let tasks_with_add_task = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(constraints)
-        .split(task_add_chunk[1]);
+        .split(task_selection_with_add_task_widget[1]);
 
     (
-        left_right_top,
-        left_right_bottom,
+        menu_or_keybinds,
+        projects_or_tasks,
         bottom_fullscreen,
-        task_chunks_add,
-        project_chunks_2,
-        project_chunks_add,
+        tasks_with_add_task,
+        project_with_add_project,
+        add_project_with_projects,
     )
 }
 

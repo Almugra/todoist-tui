@@ -20,15 +20,16 @@ use task::{render_active_task_input_widget, TaskItem, TaskStatus};
 use tui::backend::Backend;
 use tui::{backend::CrosstermBackend, Terminal};
 
+pub mod handler;
 pub mod api;
 pub mod config;
+pub mod home;
 pub mod input;
 pub mod key_events;
 pub mod menu;
 pub mod navigation;
 pub mod project;
 pub mod task;
-pub mod ui;
 use crate::api::get_projects;
 use crate::task::AddTaskHighlight;
 
@@ -98,17 +99,16 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, config: Config) -> io::Re
     project_status.project_table_state.select(Some(0));
 
     let database = Arc::new(Mutex::new(Database::default()));
-    let database2 = Arc::clone(&database);
 
-    let token2 = config.token.clone();
+    let (database_mutex_clone, token_mutex_clone) = (Arc::clone(&database), config.token.clone());
     tokio::spawn(async move {
-        database2.lock().unwrap().projects = get_projects(token2).await.unwrap();
+        database_mutex_clone.lock().unwrap().projects =
+            get_projects(token_mutex_clone).await.unwrap();
     });
 
-    let database2 = Arc::clone(&database);
-    let token2 = config.token.clone();
+    let (database_mutex_clone, token_mutex_clone) = (Arc::clone(&database), config.token.clone());
     tokio::spawn(async move {
-        database2.lock().unwrap().tasks = get_tasks(token2).await.unwrap();
+        database_mutex_clone.lock().unwrap().tasks = get_tasks(token_mutex_clone).await.unwrap();
     });
 
     loop {
@@ -116,18 +116,18 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, config: Config) -> io::Re
             let size = rect.size();
 
             let (
-                left_right_top,
-                left_right_bottom,
+                menu_or_keybinds,
+                projects_or_tasks,
                 bottom_fullscreen,
-                task_chunks_add,
-                project_chunks_2,
-                project_chunks_add,
+                task_with_add_task,
+                project_with_add_project,
+                add_project_with_projects,
             ) = create_chunks(size);
 
             let menu_tabs = render_menu_tabs(active_menu_item, config.color.clone());
-            rect.render_widget(menu_tabs, left_right_top[0]);
+            rect.render_widget(menu_tabs, menu_or_keybinds[0]);
             let key_tabs = render_key_tabs(config.color.clone());
-            rect.render_widget(key_tabs, left_right_top[1]);
+            rect.render_widget(key_tabs, menu_or_keybinds[1]);
 
             render_active_menu_widget(
                 rect,
@@ -136,23 +136,23 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, config: Config) -> io::Re
                 &mut project_status,
                 &mut task_status,
                 &config,
-                left_right_bottom.clone(),
+                projects_or_tasks.clone(),
                 bottom_fullscreen,
-                task_chunks_add,
-                project_chunks_2,
-                project_chunks_add.clone(),
+                task_with_add_task,
+                project_with_add_project,
+                add_project_with_projects.clone(),
             );
 
             if project_status.active_project_item == ProjectItem::Name {
                 render_project_item(
                     rect,
-                    project_chunks_add.clone(),
+                    add_project_with_projects.clone(),
                     &project_status.project_item,
                     config.color.clone(),
                 );
             }
 
-            render_active_task_input_widget(rect, &task_status, left_right_bottom);
+            render_active_task_input_widget(rect, &task_status, projects_or_tasks);
         })?;
 
         match rx.recv().unwrap() {

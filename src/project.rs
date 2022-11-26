@@ -5,12 +5,13 @@ use tui::{
     layout::{Alignment, Constraint, Rect},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, BorderType, Borders, Cell, Paragraph, Row, Table, TableState},
+    widgets::{Cell, Row, Table, TableState},
     Frame,
 };
 
 use crate::{
     api::{PostProject, Task},
+    handler::{create_advanced_block, create_basic_block, create_basic_paragraph},
     menu::Database,
 };
 
@@ -43,20 +44,8 @@ pub fn render_projects<'a>(
     color_right: Color,
     config_color: Color,
 ) -> (Table<'a>, Table<'a>) {
-    let projects_block = Block::default()
-        .borders(Borders::ALL)
-        .title("Projects")
-        .style(Style::default().fg(Color::White))
-        .title_alignment(Alignment::Center)
-        .border_style(Style::default().fg(color_left))
-        .border_type(BorderType::Plain);
-
-    let task_block = Block::default()
-        .borders(Borders::ALL)
-        .style(Style::default().fg(Color::White))
-        .border_type(BorderType::Plain)
-        .border_style(Style::default().fg(color_right))
-        .title("Tasks");
+    let projects_block = create_advanced_block("Projects", color_left, Alignment::Center);
+    let task_block = create_advanced_block("Tasks", color_right, Alignment::Left);
 
     pub fn get_task_from_project_id(project_id: String, task_list: &mut Vec<Task>) -> String {
         let mut counter = 0;
@@ -175,11 +164,7 @@ pub fn render_project_item<B: Backend>(
     project_item: &PostProject,
     config_color: Color,
 ) {
-    let name = Block::default()
-        .title("Add Project")
-        .borders(Borders::ALL)
-        .style(Style::default().fg(config_color))
-        .border_type(BorderType::Plain);
+    let name = create_basic_block("Add Project", config_color);
 
     let task_name = project_item.name.clone();
     let name_len = project_item.name.len();
@@ -188,9 +173,7 @@ pub fn render_project_item<B: Backend>(
         let (_, second) = task_name.split_at(((name_len / 25) * 25) - 3);
         current_name = second.to_string();
     }
+    let name = create_basic_paragraph(current_name, name);
 
-    let name = Paragraph::new(current_name)
-        .style(Style::default().fg(Color::White))
-        .block(name);
     rect.render_widget(name, project_chunks[0]);
 }

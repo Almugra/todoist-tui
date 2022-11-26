@@ -1,12 +1,15 @@
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
-    widgets::{Block, BorderType, Borders, Paragraph, TableState},
+    style::Color,
+    widgets::{Block, TableState},
     Frame,
 };
 
-use crate::api::TaskContent;
+use crate::{
+    api::TaskContent,
+    handler::{create_basic_block, create_basic_paragraph},
+};
 
 #[derive(Copy, Clone, Debug)]
 pub struct AddTaskHighlight {
@@ -110,7 +113,7 @@ pub fn render_active_task_input_widget<B: Backend>(
                 _ => {}
             }
             rect.set_cursor(x, y);
-            render_task_item(
+            render_add_task_input_fields(
                 rect,
                 left_right_bottom.clone(),
                 task_status.add_task_highlight,
@@ -121,43 +124,19 @@ pub fn render_active_task_input_widget<B: Backend>(
     }
 }
 
-pub fn render_add_tasks<'a>(
+pub fn create_add_task_blocks<'a>(
     highlight: &AddTaskHighlight,
 ) -> (Block<'a>, Block<'a>, Block<'a>, Block<'a>, Block<'a>) {
-    let name = Block::default()
-        .title("Name")
-        .borders(Borders::ALL)
-        .style(Style::default().fg(highlight.name))
-        .border_type(BorderType::Plain);
-
-    let desc = Block::default()
-        .title("Description")
-        .borders(Borders::ALL)
-        .style(Style::default().fg(highlight.desc))
-        .border_type(BorderType::Plain);
-
-    let label = Block::default()
-        .title("Labels")
-        .borders(Borders::ALL)
-        .style(Style::default().fg(highlight.label))
-        .border_type(BorderType::Plain);
-
-    let prio = Block::default()
-        .title("Priority")
-        .borders(Borders::ALL)
-        .style(Style::default().fg(highlight.prio))
-        .border_type(BorderType::Plain);
-
-    let due = Block::default()
-        .title("Due date")
-        .borders(Borders::ALL)
-        .style(Style::default().fg(highlight.due))
-        .border_type(BorderType::Plain);
+    let name = create_basic_block("Name", highlight.name);
+    let desc = create_basic_block("Description", highlight.desc);
+    let label = create_basic_block("Labels", highlight.label);
+    let prio = create_basic_block("Priority", highlight.prio);
+    let due = create_basic_block("Due date", highlight.due);
 
     (name, desc, prio, label, due)
 }
 
-pub fn render_task_item<'a, B: Backend>(
+pub fn render_add_task_input_fields<'a, B: Backend>(
     rect: &mut Frame<B>,
     project_chunks: Vec<Rect>,
     highlight: AddTaskHighlight,
@@ -168,19 +147,13 @@ pub fn render_task_item<'a, B: Backend>(
         .constraints([Constraint::Percentage(100)].as_ref())
         .split(project_chunks[1]);
 
+    let constraints = [Constraint::Length(3); 6];
     let desc_width = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Length(3),
-        ])
+        .constraints(constraints)
         .split(task_width_full[0]);
 
-    let (name, desc, prio, label, due) = render_add_tasks(&highlight);
+    let (name, desc, prio, label, due) = create_add_task_blocks(&highlight);
 
     let task_name = task_content.content.clone();
     let name_len = task_content.content.len();
@@ -189,9 +162,7 @@ pub fn render_task_item<'a, B: Backend>(
         let (_, second) = task_name.split_at(((name_len / 40) * 40) - 3);
         current_name = second.to_string();
     }
-    let name = Paragraph::new(current_name)
-        .style(Style::default().fg(Color::White))
-        .block(name);
+    let name = create_basic_paragraph(current_name, name);
 
     let task_desc = task_content.description.clone();
     let desc_len = task_content.description.len();
@@ -200,9 +171,7 @@ pub fn render_task_item<'a, B: Backend>(
         let (_, second) = task_desc.split_at(((desc_len / 40) * 40) - 3);
         current_desc = second.to_string();
     }
-    let desc = Paragraph::new(current_desc)
-        .style(Style::default().fg(Color::White))
-        .block(desc);
+    let desc = create_basic_paragraph(current_desc, desc);
 
     let task_label = task_content.labels.clone();
     let label_len = task_content.labels.len();
@@ -211,9 +180,7 @@ pub fn render_task_item<'a, B: Backend>(
         let (_, second) = task_label.split_at(((label_len / 40) * 40) - 3);
         current_label = second.to_string();
     }
-    let label = Paragraph::new(current_label)
-        .style(Style::default().fg(Color::White))
-        .block(label);
+    let label = create_basic_paragraph(current_label, label);
 
     let task_due = task_content.due_string.clone();
     let due_len = task_content.due_string.len();
@@ -222,13 +189,10 @@ pub fn render_task_item<'a, B: Backend>(
         let (_, second) = task_due.split_at(((due_len / 40) * 40) - 3);
         current_due = second.to_string();
     }
-    let due = Paragraph::new(current_due)
-        .style(Style::default().fg(Color::White))
-        .block(due);
+    let due = create_basic_paragraph(current_due, due);
 
-    let prio = Paragraph::new(task_content.priority.as_ref())
-        .style(Style::default().fg(Color::White))
-        .block(prio);
+    let prio = create_basic_paragraph(task_content.priority.clone(), prio);
+
     rect.render_widget(name, desc_width[0]);
     rect.render_widget(desc, desc_width[1]);
     rect.render_widget(label, desc_width[2]);
