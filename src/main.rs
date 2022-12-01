@@ -1,4 +1,5 @@
 use api::get_tasks;
+use chunks::Chunks;
 use config::{get_config, Config};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event as CEvent},
@@ -6,23 +7,24 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use key_events::{get_key_event, EventExit};
-use menu::{create_chunks, render_key_tabs, render_menu_tabs};
 use menu::{render_active_menu_widget, Database, MenuItem};
-
+use menu::{render_key_tabs, render_menu_tabs};
 use project::{render_project_item, ProjectItem, ProjectStatus};
+use task::{render_active_task_input_widget, TaskStatus};
+
 use std::{io, sync::mpsc};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
 use std::{sync::Mutex, thread};
-use task::{render_active_task_input_widget, TaskItem, TaskStatus};
 use tui::backend::Backend;
 use tui::{backend::CrosstermBackend, Terminal};
 
-pub mod handler;
 pub mod api;
+pub mod chunks;
 pub mod config;
+pub mod handler;
 pub mod home;
 pub mod input;
 pub mod key_events;
@@ -31,7 +33,6 @@ pub mod navigation;
 pub mod project;
 pub mod task;
 use crate::api::get_projects;
-use crate::task::AddTaskHighlight;
 
 #[derive(Copy, Clone, Debug)]
 enum Event<I> {
@@ -52,6 +53,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let res = run_app(&mut terminal, config);
 
+    if let Err(err) = res {
+        println!("{:?}", err)
+    }
+
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
@@ -60,14 +65,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     terminal.show_cursor()?;
 
-    if let Err(err) = res {
-        println!("{:?}", err)
-    }
-
     Ok(())
 }
 
-pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, config: Config) -> io::Result<()> {
+
+pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, config: Config) -> io::Result<()>{
     let (tx, rx) = mpsc::channel();
     let tick_rate = Duration::from_millis(200);
     thread::spawn(move || {
@@ -83,10 +85,8 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, config: Config) -> io::Re
                 }
             }
 
-            if last_tick.elapsed() >= tick_rate {
-                if let Ok(_) = tx.send(Event::Tick) {
-                    last_tick = Instant::now();
-                }
+            if last_tick.elapsed() >= tick_rate && tx.send(Event::Tick).is_ok() {
+                last_tick = Instant::now();
             }
         }
     });
@@ -100,59 +100,56 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, config: Config) -> io::Re
 
     let database = Arc::new(Mutex::new(Database::default()));
 
-    let (database_mutex_clone, token_mutex_clone) = (Arc::clone(&database), config.token.clone());
+    let (database_mutex, token_mutex) = (Arc::clone(&database), config.token.clone());
     tokio::spawn(async move {
-        database_mutex_clone.lock().unwrap().projects =
-            get_projects(token_mutex_clone).await.unwrap();
+        match get_projects(token_mutex).await {
+            Ok(projects) => database_mutex.lock().unwrap().projects = projects,
+            Err(err) => println!("{:?}", err),
+        }
     });
 
-    let (database_mutex_clone, token_mutex_clone) = (Arc::clone(&database), config.token.clone());
+    let (database_mutex, token_mutex) = (Arc::clone(&database), config.token.clone());
     tokio::spawn(async move {
-        database_mutex_clone.lock().unwrap().tasks = get_tasks(token_mutex_clone).await.unwrap();
+        match get_tasks(token_mutex).await{
+            Ok(tasks) => database_mutex.lock().unwrap().tasks = tasks,
+            Err(err) => println!("{:?}", err),
+        }
     });
 
     loop {
         terminal.draw(|rect| {
             let size = rect.size();
 
-            let (
-                menu_or_keybinds,
-                projects_or_tasks,
-                bottom_fullscreen,
-                task_with_add_task,
-                project_with_add_project,
-                add_project_with_projects,
-            ) = create_chunks(size);
+            let chunks = Chunks::create_chunks(size);
 
-            let menu_tabs = render_menu_tabs(active_menu_item, config.color.clone());
-            rect.render_widget(menu_tabs, menu_or_keybinds[0]);
-            let key_tabs = render_key_tabs(config.color.clone());
-            rect.render_widget(key_tabs, menu_or_keybinds[1]);
+            let menu_tabs = render_menu_tabs(active_menu_item, config.color);
+            rect.render_widget(menu_tabs, chunks.menu_or_keybinds[0]);
+            let key_tabs = render_key_tabs(config.color);
+            rect.render_widget(key_tabs, chunks.menu_or_keybinds[1]);
 
-            render_active_menu_widget(
+            match render_active_menu_widget(
                 rect,
                 active_menu_item,
                 Arc::clone(&database),
                 &mut project_status,
                 &mut task_status,
                 &config,
-                projects_or_tasks.clone(),
-                bottom_fullscreen,
-                task_with_add_task,
-                project_with_add_project,
-                add_project_with_projects.clone(),
-            );
+                &chunks,
+            ) {
+                Ok(_) => {},
+                Err(err) => println!("{:?}", err),
+            }
 
             if project_status.active_project_item == ProjectItem::Name {
                 render_project_item(
                     rect,
-                    add_project_with_projects.clone(),
+                    chunks.add_project_with_projects,
                     &project_status.project_item,
-                    config.color.clone(),
+                    config.color,
                 );
             }
 
-            render_active_task_input_widget(rect, &task_status, projects_or_tasks);
+            render_active_task_input_widget(rect, &task_status, chunks.projects_or_tasks);
         })?;
 
         match rx.recv().unwrap() {

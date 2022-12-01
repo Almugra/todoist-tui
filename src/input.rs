@@ -1,4 +1,4 @@
-use crate::{project::ProjectStatus, task::TaskStatus, ProjectItem, TaskItem};
+use crate::{project::ProjectStatus, task::{TaskStatus, TaskItem}, ProjectItem};
 
 pub fn push_char_to_field(
     e: char,
@@ -14,7 +14,7 @@ pub fn push_char_to_field(
         TaskItem::Prio => {
             task_content.priority.push(e);
             match task_content.priority.parse::<usize>() {
-                Ok(x) if x <= 4 && x >= 1 => {}
+                Ok(x) if (1..=4).contains(&x) => {}
                 _ => task_content.priority.clear(),
             };
         }

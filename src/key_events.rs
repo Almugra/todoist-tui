@@ -52,20 +52,19 @@ pub fn get_key_event(
         }
         KeyCode::Enter if *active_menu_item == MenuItem::AddTask => {
             if let Some(selected) = project_status.project_table_state.selected() {
-                let database1 = Arc::clone(&database);
                 let current_selected_project =
-                    &database1.lock().unwrap().projects[selected].id.clone();
+                    &database.lock().unwrap().projects[selected].id.clone();
                 let temp_task = Task::temp(
                     task_status.task_content.clone(),
                     current_selected_project.to_string(),
                 );
-                database1.lock().unwrap().tasks.push(temp_task.clone());
-                let database2 = Arc::clone(&database);
+                database.lock().unwrap().tasks.push(temp_task.clone());
+                let database_mutex = Arc::clone(&database);
                 let token2 = config.token.clone();
                 tokio::spawn(async move {
                     let _ = post_task(token2.clone(), temp_task).await;
-                    database2.lock().unwrap().tasks = get_tasks(token2).await.unwrap();
-                    database2
+                    database_mutex.lock().unwrap().tasks = get_tasks(token2).await.unwrap();
+                    database_mutex
                         .lock()
                         .unwrap()
                         .tasks
@@ -79,31 +78,26 @@ pub fn get_key_event(
         }
         KeyCode::Enter if *active_menu_item == MenuItem::AddProject => {
             let temp_project = Project::name(&project_status.project_item.name);
-            let database2 = Arc::clone(&database);
-            database2
-                .lock()
-                .unwrap()
-                .projects
-                .push(temp_project.clone());
+            database.lock().unwrap().projects.push(temp_project);
             let token = config.token.clone();
-            let token2 = config.token.clone();
             let project_item = project_status.project_item.clone();
+            let database2 = Arc::clone(&database);
             tokio::spawn(async move {
-                let _ = post_projects(token, project_item).await;
-                database2.lock().unwrap().projects = get_projects(token2).await.unwrap();
+                let _ = post_projects(token.clone(), project_item).await;
+                database2.lock().unwrap().projects = get_projects(token).await.unwrap();
             });
             project_status.project_item = PostProject::default();
             *active_menu_item = MenuItem::Projects;
             project_status.active_project_item = ProjectItem::Empty;
         }
         KeyCode::Tab if *active_menu_item == MenuItem::AddTask => {
-            change_active_add_task_input_field(task_status, config.color.clone());
+            change_active_add_task_input_field(task_status, config.color);
         }
         KeyCode::BackTab if *active_menu_item == MenuItem::AddTask => {
-            change_active_add_task_input_field(task_status, config.color.clone());
-            change_active_add_task_input_field(task_status, config.color.clone());
-            change_active_add_task_input_field(task_status, config.color.clone());
-            change_active_add_task_input_field(task_status, config.color.clone());
+            change_active_add_task_input_field(task_status, config.color);
+            change_active_add_task_input_field(task_status, config.color);
+            change_active_add_task_input_field(task_status, config.color);
+            change_active_add_task_input_field(task_status, config.color);
         }
         KeyCode::Char('q') => return EventExit::Break,
         KeyCode::Char('h') => match active_menu_item {
@@ -120,21 +114,19 @@ pub fn get_key_event(
         KeyCode::Char('l') => match active_menu_item {
             MenuItem::Home => *active_menu_item = MenuItem::Projects,
             MenuItem::Projects => {
-                task_status.task_table_state.select(Some(0));
-                let database2 = Arc::clone(&database);
-                let project_id = &database2.lock().unwrap().projects
-                    [project_status.project_table_state.selected().unwrap()]
-                .id
-                .clone();
-                let tasks2 = database2.lock().unwrap();
-                let tasks_from_project: Vec<_> = tasks2
-                    .tasks
-                    .iter()
-                    .filter(|x| x.project_id == project_id.clone())
-                    .collect();
+                if let Some(selected) = project_status.project_table_state.selected() {
+                    task_status.task_table_state.select(Some(0));
+                    let project_id = &database.lock().unwrap().projects[selected].id.clone();
+                    let tasks2 = database.lock().unwrap();
+                    let tasks_from_project: Vec<_> = tasks2
+                        .tasks
+                        .iter()
+                        .filter(|x| x.project_id == project_id.clone())
+                        .collect();
 
-                if tasks_from_project.len() != 0 {
-                    *active_menu_item = MenuItem::Tasks;
+                    if !tasks_from_project.is_empty() {
+                        *active_menu_item = MenuItem::Tasks;
+                    }
                 }
             }
             MenuItem::Tasks => {
@@ -152,7 +144,7 @@ pub fn get_key_event(
             if let MenuItem::Projects | MenuItem::Tasks = active_menu_item {
                 *active_menu_item = MenuItem::AddTask;
                 task_status.active_task_item = TaskItem::Name;
-                task_status.add_task_highlight.name = config.color.clone();
+                task_status.add_task_highlight.name = config.color;
             }
         }
         KeyCode::Char('d') => match active_menu_item {
@@ -161,35 +153,31 @@ pub fn get_key_event(
                     if let Some(selected_project) = project_status.project_table_state.selected() {
                         let mut task_count = 0;
 
-                        let database2 = Arc::clone(&database);
                         let mut tasks_above_current = vec![];
                         for i in 0..selected_project {
-                            let task_id_at_i = database2.lock().unwrap().projects[i].id.clone();
+                            let task_id_at_i = database.lock().unwrap().projects[i].id.clone();
                             tasks_above_current.push(task_id_at_i);
                         }
-                        database2.lock().unwrap().tasks.iter().for_each(|task| {
-                            if tasks_above_current
-                                .iter()
-                                .any(|s| s.to_string() == task.project_id)
-                            {
+                        database.lock().unwrap().tasks.iter().for_each(|task| {
+                            if tasks_above_current.iter().any(|s| *s == task.project_id) {
                                 task_count += 1;
                             }
                         });
 
-                        let task_at_select = database2.lock().unwrap().tasks[task_count + selected]
+                        let task_at_select = database.lock().unwrap().tasks[task_count + selected]
                             .id
                             .clone();
-                        let token2 = config.token.clone();
-                        let database3 = Arc::clone(&database);
+                        let token_c = config.token.clone();
+                        let database_c = Arc::clone(&database);
                         tokio::spawn(async move {
-                            database2
+                            database_c
                                 .lock()
                                 .unwrap()
                                 .tasks
                                 .remove(selected + task_count);
-                            let _ = delete_task(token2.clone(), task_at_select.to_string()).await;
-                            database3.lock().unwrap().tasks = get_tasks(token2).await.unwrap();
-                            database3
+                            let _ = delete_task(token_c.clone(), task_at_select.to_string()).await;
+                            database_c.lock().unwrap().tasks = get_tasks(token_c).await.unwrap();
+                            database_c
                                 .lock()
                                 .unwrap()
                                 .tasks
@@ -197,10 +185,9 @@ pub fn get_key_event(
                         });
 
                         let mut task_count = 0;
-                        let database2 = Arc::clone(&database);
-                        let tasks_len = database2.lock().unwrap().tasks.len().clone();
+                        let tasks_len = database.lock().unwrap().tasks.len();
                         (0..tasks_len).for_each(|i| {
-                            let selected_project_id = database2.lock().unwrap().projects
+                            let selected_project_id = database.lock().unwrap().projects
                                 [selected_project]
                                 .id
                                 .clone();
@@ -226,8 +213,7 @@ pub fn get_key_event(
                     if selected == 0 {
                         return EventExit::Continue;
                     }
-                    let database2 = Arc::clone(&database);
-                    let id = database2.lock().unwrap().projects[selected].id.clone();
+                    let id = database.lock().unwrap().projects[selected].id.clone();
                     let token = config.token.clone();
                     tokio::spawn(async move { delete_project(token, id).await });
                     database.lock().unwrap().projects.remove(selected);

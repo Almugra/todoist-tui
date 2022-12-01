@@ -1,8 +1,8 @@
-use std::sync::{Arc, Mutex};
+use std::{sync::{Arc, Mutex}, io};
 
 use tui::{
     backend::Backend,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::Alignment,
     style::{Color, Modifier, Style},
     symbols,
     text::{Span, Spans},
@@ -12,10 +12,11 @@ use tui::{
 
 use crate::{
     api::{PostProject, Project, Task, TaskContent},
+    chunks::Chunks,
     config::Config,
     home::render_home,
-    project::{render_projects, ProjectItem, ProjectStatus},
-    task::{AddTaskHighlight, TaskItem, TaskStatus},
+    project::{get_project_table_list, ProjectItem, ProjectStatus},
+    task::{get_task_table_list, AddTaskHighlight, TaskItem, TaskStatus},
 };
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -54,79 +55,92 @@ impl Default for Database {
     }
 }
 
-pub fn render_active_menu_widget<B: Backend>(
+pub fn render_active_menu_widget<B: Backend> (
     rect: &mut Frame<B>,
     active_menu_item: MenuItem,
     database: Arc<Mutex<Database>>,
     project_status: &mut ProjectStatus,
     task_status: &mut TaskStatus,
     config: &Config,
-    projects_or_tasks: Vec<Rect>,
-    bottom_fullscreen: Vec<Rect>,
-    task_with_add_task: Vec<Rect>,
-    project_with_add_project: Vec<Rect>,
-    add_project_with_projects: Vec<Rect>,
-) {
-    let highlight_color = config.color.clone();
+    chunks: &Chunks,
+) -> io::Result<()>{
+    let highlight_color = config.color;
 
     match active_menu_item {
-        MenuItem::Home => rect.render_widget(render_home(), bottom_fullscreen[0]),
+        MenuItem::Home => rect.render_widget(render_home(), chunks.bottom_fullscreen[0]),
         MenuItem::Projects => {
-            let (left, right) = render_projects(
-                &project_status.project_table_state,
-                database,
+            let project_table = get_project_table_list(
+                &database,
                 highlight_color,
+                highlight_color,
+            );
+
+            let task_table = get_task_table_list(
+                &project_status.project_table_state,
+                Arc::clone(&database),
                 Color::White,
-                config.color.clone(),
+                highlight_color,
             );
             rect.render_stateful_widget(
-                left,
-                projects_or_tasks[0],
+                project_table,
+                chunks.projects_or_tasks[0],
                 &mut project_status.project_table_state,
             );
-            rect.render_widget(right, projects_or_tasks[1]);
+            rect.render_widget(task_table, chunks.projects_or_tasks[1]);
         }
         MenuItem::Tasks => {
-            let (left, right) = render_projects(
+            let project_table = get_project_table_list(
+                &database,
+                Color::White,
+                config.color,
+            );
+            let task_table = get_task_table_list(
                 &project_status.project_table_state,
-                database,
+                Arc::clone(&database),
                 Color::White,
                 highlight_color,
-                config.color.clone(),
             );
             rect.render_stateful_widget(
-                left,
-                projects_or_tasks[0],
+                project_table,
+                chunks.projects_or_tasks[0],
                 &mut project_status.project_table_state,
             );
             rect.render_stateful_widget(
-                right,
-                projects_or_tasks[1],
+                task_table,
+                chunks.projects_or_tasks[1],
                 &mut task_status.task_table_state,
             );
         }
         MenuItem::AddTask => {
-            let (left, right) = render_projects(
-                &project_status.project_table_state,
-                database,
+            let project_table = get_project_table_list(
+                &database,
                 Color::White,
-                Color::White,
-                config.color.clone(),
+                config.color,
             );
-            rect.render_stateful_widget(
-                left,
-                projects_or_tasks[0],
-                &mut project_status.project_table_state,
-            );
-            rect.render_widget(right, task_with_add_task[1]);
-        }
-        MenuItem::AddProject => {
-            let (left, right) = render_projects(
+            let task_table = get_task_table_list(
                 &project_status.project_table_state,
                 Arc::clone(&database),
                 Color::White,
+                highlight_color,
+            );
+            rect.render_stateful_widget(
+                project_table,
+                chunks.projects_or_tasks[0],
+                &mut project_status.project_table_state,
+            );
+            rect.render_widget(task_table, chunks.tasks_with_add_task[1]);
+        }
+        MenuItem::AddProject => {
+            let project_table = get_project_table_list(
+                &database,
                 Color::White,
-                config.color.clone(),
+                config.color,
+            );
+            let task_table = get_task_table_list(
+                &project_status.project_table_state,
+                Arc::clone(&database),
+                Color::White,
+                highlight_color,
             );
             let name_len = project_status.project_item.name.len();
             let mut next_line_buffer = 0;
@@ -134,101 +148,16 @@ pub fn render_active_menu_widget<B: Backend>(
                 next_line_buffer = 3;
             }
             rect.set_cursor(
-                add_project_with_projects[0].x + 1 + name_len as u16 - ((name_len / 25) * 25) as u16
+                chunks.add_project_with_projects[0].x + 1 + name_len as u16
+                    - ((name_len / 25) * 25) as u16
                     + next_line_buffer,
-                add_project_with_projects[0].y + 1,
+                chunks.add_project_with_projects[0].y + 1,
             );
-            rect.render_widget(left, project_with_add_project[0]);
-            rect.render_widget(right, projects_or_tasks[1]);
+            rect.render_widget(project_table, chunks.project_with_add_project[0]);
+            rect.render_widget(task_table, chunks.projects_or_tasks[1]);
         }
     }
-}
-
-pub fn create_chunks(
-    size: Rect,
-) -> (
-    Vec<Rect>,
-    Vec<Rect>,
-    Vec<Rect>,
-    Vec<Rect>,
-    Vec<Rect>,
-    Vec<Rect>,
-) {
-    let top_bottom_split = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(2)
-        .constraints([Constraint::Length(3), Constraint::Min(2)].as_ref())
-        .split(size);
-
-    let bottom_fullscreen = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Length(75), Constraint::Length(40)])
-        .split(top_bottom_split[1]);
-
-    let projects_section_with_add_project_widget = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(2)
-        .constraints([Constraint::Length(6), Constraint::Min(50)].as_ref())
-        .split(size);
-
-    let task_selection_with_add_task_widget = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(2)
-        .constraints([Constraint::Length(18), Constraint::Min(50)].as_ref())
-        .split(size);
-
-    let add_project_section_with_projects_widget = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(2)
-        .constraints(
-            [
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Min(50),
-            ]
-            .as_ref(),
-        )
-        .split(size);
-
-    let constraints = [
-        Constraint::Length(30),
-        Constraint::Length(45),
-        Constraint::Length(10),
-    ];
-
-    let menu_or_keybinds = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints(constraints)
-        .split(top_bottom_split[0]);
-
-    let projects_or_tasks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints(constraints)
-        .split(top_bottom_split[1]);
-
-    let project_with_add_project = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints(constraints)
-        .split(projects_section_with_add_project_widget[1]);
-
-    let add_project_with_projects = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints(constraints)
-        .split(add_project_section_with_projects_widget[1]);
-
-    let tasks_with_add_task = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints(constraints)
-        .split(task_selection_with_add_task_widget[1]);
-
-    (
-        menu_or_keybinds,
-        projects_or_tasks,
-        bottom_fullscreen,
-        tasks_with_add_task,
-        project_with_add_project,
-        add_project_with_projects,
-    )
+    Ok(())
 }
 
 pub fn cleanup(

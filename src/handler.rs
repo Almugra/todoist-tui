@@ -4,7 +4,7 @@ use tui::{
     widgets::{Block, BorderType, Borders, Paragraph},
 };
 
-pub fn create_basic_block<'a>(title: &'a str, highlight_color: Color) -> Block<'a> {
+pub fn create_basic_block(title: &str, highlight_color: Color) -> Block {
     Block::default()
         .title(title)
         .borders(Borders::ALL)
@@ -12,11 +12,11 @@ pub fn create_basic_block<'a>(title: &'a str, highlight_color: Color) -> Block<'
         .border_type(BorderType::Plain)
 }
 
-pub fn create_advanced_block<'a>(
-    title: &'a str,
+pub fn create_advanced_block(
+    title: &str,
     highlight_color: Color,
     alignment: Alignment,
-) -> Block<'a> {
+) -> Block {
     Block::default()
         .title(title)
         .borders(Borders::ALL)
@@ -26,7 +26,7 @@ pub fn create_advanced_block<'a>(
         .border_type(BorderType::Plain)
 }
 
-pub fn create_basic_paragraph<'a>(paragraph: String, block: Block<'a>) -> Paragraph<'a> {
+pub fn create_basic_paragraph(paragraph: String, block: Block) -> Paragraph {
     Paragraph::new(paragraph)
         .style(Style::default().fg(Color::White))
         .block(block)

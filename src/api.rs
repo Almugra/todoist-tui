@@ -47,17 +47,6 @@ pub struct Due {
     pub string: Option<String>,
 }
 
-impl Default for Due {
-    fn default() -> Self {
-        Self {
-            date: Default::default(),
-            is_recurring: Default::default(),
-            datetime: Default::default(),
-            timezone: Default::default(),
-            string: Default::default(),
-        }
-    }
-}
 
 #[derive(Deserialize, Debug, Serialize, Clone)]
 pub struct Task {
@@ -85,12 +74,18 @@ impl Task {
     pub fn temp(task_content: TaskContent, project_id: String) -> Task {
         let labels: Vec<String> = task_content
             .labels
-            .replace(" ", "")
+            .replace(' ', "")
             .split(',')
             .map(|s| s.to_owned())
             .collect();
 
-        let mut due = Due::default();
+        let mut due = Due {
+                date: Default::default(),
+                is_recurring: Default::default(),
+                datetime: Default::default(),
+                timezone: Default::default(),
+                string: Default::default(),
+            };
         due.datetime = Some(task_content.due_string.to_owned());
 
         Task {
@@ -107,7 +102,7 @@ impl Task {
             due: Some(due),
             order: 0,
             priority: task_content.priority.parse::<usize>().unwrap(),
-            project_id: project_id.to_string(),
+            project_id,
             section_id: None,
             parent_id: None,
             due_string: Some(task_content.due_string),
@@ -116,17 +111,9 @@ impl Task {
     }
 }
 
-#[derive(Deserialize, Debug, Serialize, Clone)]
+#[derive(Default, Deserialize, Debug, Serialize, Clone)]
 pub struct PostProject {
     pub name: String,
-}
-
-impl Default for PostProject {
-    fn default() -> Self {
-        Self {
-            name: Default::default(),
-        }
-    }
 }
 
 #[derive(Deserialize, Debug, Serialize, Clone)]

@@ -6,7 +6,9 @@ use tui::{
     widgets::{ListItem, TableState},
 };
 
-use crate::{menu::Database, task::TaskStatus, AddTaskHighlight, TaskItem};
+use crate::{menu::Database, task::{TaskStatus, TaskItem, AddTaskHighlight}};
+
+
 
 pub fn navigate_down_projects(project_list_state: &mut TableState, project_amount: usize) {
     if let Some(selected) = project_list_state.selected() {
@@ -115,27 +117,27 @@ pub fn change_active_add_task_input_field(task_status: &mut TaskStatus, config_c
         TaskItem::Name => {
             task_status.active_task_item = TaskItem::Desc;
             task_status.add_task_highlight = AddTaskHighlight::default();
-            task_status.add_task_highlight.desc = config_color.clone();
+            task_status.add_task_highlight.desc = config_color;
         }
         TaskItem::Desc => {
             task_status.active_task_item = TaskItem::Label;
             task_status.add_task_highlight = AddTaskHighlight::default();
-            task_status.add_task_highlight.label = config_color.clone();
+            task_status.add_task_highlight.label = config_color;
         }
         TaskItem::Label => {
             task_status.active_task_item = TaskItem::Due;
             task_status.add_task_highlight = AddTaskHighlight::default();
-            task_status.add_task_highlight.due = config_color.clone();
+            task_status.add_task_highlight.due = config_color;
         }
         TaskItem::Due => {
             task_status.active_task_item = TaskItem::Prio;
             task_status.add_task_highlight = AddTaskHighlight::default();
-            task_status.add_task_highlight.prio = config_color.clone();
+            task_status.add_task_highlight.prio = config_color;
         }
         TaskItem::Prio => {
             task_status.active_task_item = TaskItem::Name;
             task_status.add_task_highlight = AddTaskHighlight::default();
-            task_status.add_task_highlight.name = config_color.clone();
+            task_status.add_task_highlight.name = config_color;
         }
         _ => {}
     }
