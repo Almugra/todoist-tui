@@ -19,7 +19,8 @@ use crate::{
 };
 
 pub enum EventExit {
-    Break,
+    Exit,
+    Error(anyhow::Error),
     Continue,
 }
 
@@ -99,7 +100,7 @@ pub fn get_key_event(
             change_active_add_task_input_field(task_status, config.color);
             change_active_add_task_input_field(task_status, config.color);
         }
-        KeyCode::Char('q') => return EventExit::Break,
+        KeyCode::Char('q') => return EventExit::Exit,
         KeyCode::Char('h') => match active_menu_item {
             MenuItem::Home => *active_menu_item = MenuItem::Projects,
             MenuItem::Projects => {

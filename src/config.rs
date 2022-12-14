@@ -9,6 +9,7 @@ use tui::style::Color;
 pub struct RawConfig {
     pub token: String,
     pub color: String,
+    pub sec_color: String,
 }
 
 pub struct Config {
@@ -21,10 +22,10 @@ impl Config {
         let colors = config.color.replace(' ', "");
         let colors: Vec<&str> = colors.split(',').collect();
         let color = Color::Rgb(
-            colors[0].parse().unwrap(), 
-            colors[1].parse().unwrap(), 
-            colors[2].parse().unwrap(), 
-            );
+            colors[0].parse().unwrap(),
+            colors[1].parse().unwrap(),
+            colors[2].parse().unwrap(),
+        );
 
         Config {
             token: config.token,
@@ -35,7 +36,6 @@ impl Config {
 
 use std::env;
 
-
 pub fn get_config() -> Config {
     let filename = "Config.toml";
     let mut args = env::args();
@@ -43,10 +43,13 @@ pub fn get_config() -> Config {
 
     if let Some(argument) = args.next() {
         let mut file = File::create(filename).unwrap();
-        file.write_all(format!("token = '{}'\n
-                                color = '210, 39, 48'", argument)
-                       .as_bytes())
-                       .unwrap();
+        let config = RawConfig {
+            token: argument,
+            color: "210, 39, 48".to_string(),
+            sec_color: "210, 211, 212".to_string(),
+        };
+        let content = toml::to_string_pretty(&config);
+        file.write_all(content.unwrap().as_bytes()).unwrap();
     }
 
     let contents = match fs::read_to_string(filename) {

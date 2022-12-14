@@ -63,7 +63,7 @@ pub fn render_active_menu_widget<B: Backend> (
     task_status: &mut TaskStatus,
     config: &Config,
     chunks: &Chunks,
-) -> io::Result<()>{
+) {
     let highlight_color = config.color;
 
     match active_menu_item {
@@ -157,7 +157,6 @@ pub fn render_active_menu_widget<B: Backend> (
             rect.render_widget(task_table, chunks.projects_or_tasks[1]);
         }
     }
-    Ok(())
 }
 
 pub fn cleanup(

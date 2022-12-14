@@ -1,3 +1,4 @@
+use anyhow::Result;
 use api::get_tasks;
 use chunks::Chunks;
 use config::{get_config, Config};
@@ -41,7 +42,7 @@ enum Event<I> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), anyhow::Error> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
@@ -68,8 +69,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-
-pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, config: Config) -> io::Result<()>{
+pub fn run_app<B: Backend>(
+    terminal: &mut Terminal<B>,
+    config: Config,
+) -> Result<(), anyhow::Error> {
     let (tx, rx) = mpsc::channel();
     let tick_rate = Duration::from_millis(200);
     thread::spawn(move || {
@@ -102,18 +105,12 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, config: Config) -> io::Re
 
     let (database_mutex, token_mutex) = (Arc::clone(&database), config.token.clone());
     tokio::spawn(async move {
-        match get_projects(token_mutex).await {
-            Ok(projects) => database_mutex.lock().unwrap().projects = projects,
-            Err(err) => println!("{:?}", err),
-        }
+        database_mutex.lock().unwrap().projects = get_projects(token_mutex).await.unwrap();
     });
 
     let (database_mutex, token_mutex) = (Arc::clone(&database), config.token.clone());
     tokio::spawn(async move {
-        match get_tasks(token_mutex).await{
-            Ok(tasks) => database_mutex.lock().unwrap().tasks = tasks,
-            Err(err) => println!("{:?}", err),
-        }
+        database_mutex.lock().unwrap().tasks = get_tasks(token_mutex).await.unwrap();
     });
 
     loop {
@@ -127,7 +124,7 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, config: Config) -> io::Re
             let key_tabs = render_key_tabs(config.color);
             rect.render_widget(key_tabs, chunks.menu_or_keybinds[1]);
 
-            match render_active_menu_widget(
+            render_active_menu_widget(
                 rect,
                 active_menu_item,
                 Arc::clone(&database),
@@ -135,10 +132,7 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, config: Config) -> io::Re
                 &mut task_status,
                 &config,
                 &chunks,
-            ) {
-                Ok(_) => {},
-                Err(err) => println!("{:?}", err),
-            }
+            );
 
             if project_status.active_project_item == ProjectItem::Name {
                 render_project_item(
@@ -161,7 +155,8 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, config: Config) -> io::Re
                 &config,
                 Arc::clone(&database),
             ) {
-                EventExit::Break => break,
+                EventExit::Exit => break,
+                EventExit::Error(err) => return Err(err),
                 EventExit::Continue => {}
             },
             Event::Tick => {}
